@@ -166,18 +166,43 @@ struct WindowAttachmentEngine {
     }
 
     func convertAXFrameToScreenCoordinates(_ frame: CGRect) -> CGRect {
-        let primaryMaxY = NSScreen.screens.first(where: { $0.frame.origin == .zero })?.frame.maxY
-            ?? NSScreen.main?.frame.maxY
+        // macOS Accessibility coordinates are flipped Y relative to the primary display
+        // (the one with the menu bar). We try to find the most relevant screen for the
+        // anchor window rather than blindly assuming a screen at (0,0).
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return frame }
 
-        if let primaryMaxY {
-            let converted = CGRect(
+        // Prefer a screen that actually intersects the raw AX frame (in its native coord space).
+        let referenceScreen = screens.first(where: { $0.frame.intersects(frame) })
+            ?? screens.first(where: { $0.visibleFrame.intersects(frame) })
+            ?? NSScreen.main
+            ?? screens.first
+
+        let maxY = referenceScreen?.frame.maxY ?? (screens.first?.frame.maxY ?? 0)
+
+        let converted = CGRect(
+            x: frame.origin.x,
+            y: maxY - frame.origin.y - frame.size.height,
+            width: frame.size.width,
+            height: frame.size.height
+        )
+
+        // If the result lands on a real screen, use it. Otherwise fall back to the original.
+        if screens.contains(where: { $0.frame.intersects(converted) }) {
+            return converted
+        }
+
+        // Last-ditch attempt using the classic "screen at origin" rule
+        if let classic = screens.first(where: { $0.frame.origin == .zero })?.frame.maxY
+            ?? NSScreen.main?.frame.maxY {
+            let classicConverted = CGRect(
                 x: frame.origin.x,
-                y: primaryMaxY - frame.origin.y - frame.size.height,
+                y: classic - frame.origin.y - frame.size.height,
                 width: frame.size.width,
                 height: frame.size.height
             )
-            if NSScreen.screens.contains(where: { $0.frame.intersects(converted) }) {
-                return converted
+            if screens.contains(where: { $0.frame.intersects(classicConverted) }) {
+                return classicConverted
             }
         }
 
@@ -200,6 +225,19 @@ struct WindowAttachmentEngine {
         return nil
     }
 
+    /// Returns true if the left or right side rails have enough vertical travel
+    /// to make a side-attached widget practically usable. For very tall (full-height)
+    /// windows this returns false so we avoid placing the widget on left/right where
+    /// it has almost no room to slide and perimeter dragging becomes jarring.
+    private func isSideRailViable(for anchorFrame: CGRect, visibleFrame: CGRect, panelSize: CGSize) -> Bool {
+        let minY = anchorFrame.minY + edgeInset
+        let maxY = max(minY, anchorFrame.maxY - panelSize.height - edgeInset)
+        let verticalTravel = max(0, maxY - minY)
+        // Require roughly 1.7x the widget's own height of vertical travel.
+        // This catches "full height or nearly full height" browser windows.
+        return verticalTravel >= panelSize.height * 1.7
+    }
+
     private func resolvedDockPosition(
         for anchorFrame: CGRect,
         visibleFrame: CGRect,
@@ -216,14 +254,22 @@ struct WindowAttachmentEngine {
         let leftFits = availableLeft >= panelSize.width + sideGap
         let rightFits = availableRight >= panelSize.width + sideGap
 
+        let sideRailViable = isSideRailViable(for: anchorFrame, visibleFrame: visibleFrame, panelSize: panelSize)
+
         if placementPreference == .automatic {
-            let rankedPositions: [(StackOverlayDockPosition, CGFloat)] = [
-                (.right, availableRight),
-                (.left, availableLeft),
+            // For automatic placement, strongly prefer top/bottom. Only consider left/right
+            // when the window has enough vertical travel to make side rails actually usable.
+            var candidates: [(StackOverlayDockPosition, CGFloat)] = [
                 (.bottom, availableBottom),
                 (.top, availableTop)
             ]
-            return rankedPositions.max { lhs, rhs in lhs.1 < rhs.1 }?.0 ?? preferredDockPosition
+            if sideRailViable {
+                candidates.append(contentsOf: [
+                    (.right, availableRight),
+                    (.left, availableLeft)
+                ])
+            }
+            return candidates.max { lhs, rhs in lhs.1 < rhs.1 }?.0 ?? preferredDockPosition
         }
 
         let requestedPosition = placementPreference.dockPosition ?? preferredDockPosition
@@ -257,13 +303,18 @@ struct WindowAttachmentEngine {
             }
         }
 
-        let rankedPositions: [(StackOverlayDockPosition, CGFloat)] = [
+        // Final fallback: again prefer top/bottom for tall windows
+        var fallbackCandidates: [(StackOverlayDockPosition, CGFloat)] = [
             (.top, availableTop),
-            (.bottom, availableBottom),
-            (.left, availableLeft),
-            (.right, availableRight)
+            (.bottom, availableBottom)
         ]
-        return rankedPositions.max { lhs, rhs in lhs.1 < rhs.1 }?.0 ?? requestedPosition
+        if sideRailViable {
+            fallbackCandidates.append(contentsOf: [
+                (.left, availableLeft),
+                (.right, availableRight)
+            ])
+        }
+        return fallbackCandidates.max { lhs, rhs in lhs.1 < rhs.1 }?.0 ?? requestedPosition
     }
 
     private func proposedOrigin(

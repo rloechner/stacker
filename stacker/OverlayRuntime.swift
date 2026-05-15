@@ -2765,25 +2765,31 @@ final class StackOverlayPanelController {
         )
         let bounds = perimeterBounds(anchorFrame: anchorFrame, panelSize: panel.frame.size)
 
+        // For tall (full-height) windows, prevent perimeter drag from transitioning
+        // from top/bottom onto the left/right rails. The vertical travel is too small
+        // and the transition looks broken (widget slides over the window then snaps).
+        let sideRailViable = (bounds.maxY - bounds.minY) >= panel.frame.height * 1.5
+
         switch dockPosition {
         case .top:
-            if rawOrigin.x < bounds.minX {
+            if rawOrigin.x < bounds.minX && sideRailViable {
                 return (.left, snappedCornerOrigin(for: .left, cornerSnap: .topLeading, anchorFrame: anchorFrame, panelSize: panel.frame.size), .topLeading)
             }
-            if rawOrigin.x > bounds.maxX {
+            if rawOrigin.x > bounds.maxX && sideRailViable {
                 return (.right, snappedCornerOrigin(for: .right, cornerSnap: .topTrailing, anchorFrame: anchorFrame, panelSize: panel.frame.size), .topTrailing)
             }
             return (.top, CGPoint(x: min(max(rawOrigin.x, bounds.minX), bounds.maxX), y: anchorFrame.maxY + topGap), nil)
         case .bottom:
-            if rawOrigin.x < bounds.minX {
+            if rawOrigin.x < bounds.minX && sideRailViable {
                 return (.left, snappedCornerOrigin(for: .left, cornerSnap: .bottomLeading, anchorFrame: anchorFrame, panelSize: panel.frame.size), .bottomLeading)
             }
-            if rawOrigin.x > bounds.maxX {
+            if rawOrigin.x > bounds.maxX && sideRailViable {
                 return (.right, snappedCornerOrigin(for: .right, cornerSnap: .bottomTrailing, anchorFrame: anchorFrame, panelSize: panel.frame.size), .bottomTrailing)
             }
             return (.bottom, CGPoint(x: min(max(rawOrigin.x, bounds.minX), bounds.maxX), y: anchorFrame.minY - panel.frame.height - bottomGap), nil)
         case .left:
-            if rawOrigin.y > bounds.maxY {
+            // If we're on a side rail but vertical travel is tiny (tall window), force migration to top/bottom on any drag.
+            if !sideRailViable || rawOrigin.y > bounds.maxY {
                 return (.top, snappedCornerOrigin(for: .top, cornerSnap: .topLeading, anchorFrame: anchorFrame, panelSize: panel.frame.size), .topLeading)
             }
             if rawOrigin.y < bounds.minY {
@@ -2791,7 +2797,7 @@ final class StackOverlayPanelController {
             }
             return (.left, CGPoint(x: anchorFrame.minX - panel.frame.width - sideGap, y: min(max(rawOrigin.y, bounds.minY), bounds.maxY)), nil)
         case .right:
-            if rawOrigin.y > bounds.maxY {
+            if !sideRailViable || rawOrigin.y > bounds.maxY {
                 return (.top, snappedCornerOrigin(for: .top, cornerSnap: .topTrailing, anchorFrame: anchorFrame, panelSize: panel.frame.size), .topTrailing)
             }
             if rawOrigin.y < bounds.minY {
@@ -3207,13 +3213,23 @@ final class StackOverlayPanelController {
             }
         }
 
-        let rankedPositions: [(StackOverlayDockPosition, CGFloat)] = [
+        // Deprioritize left/right for tall (full-height) windows even in fallback.
+        let minY = anchorFrame.minY + edgeInset
+        let maxY = max(minY, anchorFrame.maxY - panel.frame.height - edgeInset)
+        let verticalTravel = max(0, maxY - minY)
+        let sideRailViable = verticalTravel >= panel.frame.height * 1.7
+
+        var fallbackCandidates: [(StackOverlayDockPosition, CGFloat)] = [
             (.top, availableTop),
-            (.bottom, availableBottom),
-            (.left, availableLeft),
-            (.right, availableRight)
+            (.bottom, availableBottom)
         ]
-        return rankedPositions.max { lhs, rhs in lhs.1 < rhs.1 }?.0 ?? preferredDockPosition
+        if sideRailViable {
+            fallbackCandidates.append(contentsOf: [
+                (.left, availableLeft),
+                (.right, availableRight)
+            ])
+        }
+        return fallbackCandidates.max { lhs, rhs in lhs.1 < rhs.1 }?.0 ?? preferredDockPosition
     }
 
     private func syncControlsPanelVisibility() {

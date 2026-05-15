@@ -6,6 +6,8 @@ It is inspired by Arc's spaces workflow: separate browser contexts can feel like
 
 Stacker is intentionally narrow. It does not launch missing browsers or profiles, recreate browser sessions, restore arbitrary workspaces, or manage every app on the system. It coordinates browser windows that already exist.
 
+If Stacker saves you time every day, consider [buying the developer a coffee](https://buymeacoffee.com/rloechner).
+
 ## Current Capabilities
 
 - Detects supported browsers when multiple windows are open.
@@ -140,3 +142,14 @@ See [docs/distribution-readiness.md](docs/distribution-readiness.md) for the cur
 - Add focused regression tests for stack/session logic that can run without controlling real apps.
 - Add signing and entitlement files for the chosen distribution channel.
 - Maintain the compatibility matrix for each supported browser, multi-monitor, Spaces, fullscreen, minimized windows, and wake-from-sleep behavior.
+
+## Contributing & Support
+
+Stacker is open source under the MIT license. Contributions are welcome, but please read [CONTRIBUTING.md](CONTRIBUTING.md) first — this is a personal tool with best-effort maintenance.
+
+If you find Stacker genuinely useful, you can support its development here:
+
+- [Buy Me a Coffee](https://buymeacoffee.com/rloechner)
+- Star the repository (it genuinely helps visibility)
+
+Bug reports, especially around edge cases with full-height windows, multiple monitors, and browser title handling, are very appreciated.
