@@ -77,7 +77,10 @@ enum WindowScriptBridge {
                     set s to size of w
                     set end of outputLines to ((i as text) & "||" & windowName & "||" & (item 1 of p as text) & "||" & (item 2 of p as text) & "||" & (item 1 of s as text) & "||" & (item 2 of s as text))
                 end repeat
-                return outputLines as string
+                set AppleScript's text item delimiters to linefeed
+                set outputText to outputLines as string
+                set AppleScript's text item delimiters to ""
+                return outputText
             end tell
         end tell
         """
@@ -87,7 +90,7 @@ enum WindowScriptBridge {
         }
 
         return output
-            .split(separator: ",")
+            .split(separator: "\n")
             .compactMap { line in
                 let parts = line.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
                 guard parts.count >= 11 else { return nil }

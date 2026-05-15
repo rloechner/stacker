@@ -102,6 +102,8 @@ final class MenuBarStateStore: ObservableObject {
                         bundleIdentifier: snapshot.bundleIdentifier,
                         processIdentifier: snapshot.processIdentifier,
                         titles: snapshot.titles,
+                        activeWindows: snapshot.activeWindows,
+                        inactiveWindows: snapshot.inactiveWindows,
                         widgetHidden: OverlayAppVisibilityPreference.isHidden(bundleIdentifier: snapshot.bundleIdentifier, appName: snapshot.appName),
                         overlayHealth: snapshot.overlayHealth
                     )
@@ -212,13 +214,13 @@ struct StackerMenuBarContent: View {
             Button {
                 state.refreshApplications()
             } label: {
-                Label("Refresh Chrome", systemImage: "arrow.clockwise")
+                Label("Refresh Browsers", systemImage: "arrow.clockwise")
             }
 
             Button {
                 state.toggleOverlayVisibility()
             } label: {
-                Label(state.overlayHidden ? "Show Profile Widgets" : "Hide Profile Widgets", systemImage: state.overlayHidden ? "eye" : "eye.slash")
+                Label(state.overlayHidden ? "Show Window Widgets" : "Hide Window Widgets", systemImage: state.overlayHidden ? "eye" : "eye.slash")
             }
 
             Button {
@@ -228,9 +230,9 @@ struct StackerMenuBarContent: View {
             }
         }
 
-        Section("Chrome Profiles") {
+        Section("Browser Windows") {
             if state.eligibleApps.isEmpty {
-                Text("No Chrome profile windows")
+                Text("No browser windows")
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(state.eligibleApps) { app in
@@ -244,13 +246,13 @@ struct StackerMenuBarContent: View {
                         Button {
                             state.toggleApplicationWidget(app)
                         } label: {
-                            Label(app.isWidgetHidden ? "Show Profile Widget" : "Hide Profile Widget", systemImage: app.isWidgetHidden ? "eye" : "eye.slash")
+                            Label(app.isWidgetHidden ? "Show Window Widget" : "Hide Window Widget", systemImage: app.isWidgetHidden ? "eye" : "eye.slash")
                         }
 
                         Button {
                             state.focusApplicationWorkspace(app)
                         } label: {
-                            Label("Manage Profiles", systemImage: "arrow.up.forward.app")
+                            Label("Manage Windows", systemImage: "arrow.up.forward.app")
                         }
 
                         if app.overlayHealth == .clamped || app.overlayHealth == .missingAnchor {
@@ -262,7 +264,7 @@ struct StackerMenuBarContent: View {
                         }
 
                         Divider()
-                        Text("\(app.windowCount) profile windows")
+                        Text("\(app.windowCount) windows")
                             .foregroundStyle(.secondary)
                         if app.isActive {
                             Text(app.statusTitle)
@@ -287,9 +289,9 @@ struct StackerMenuBarContent: View {
         }
 
         Section("Status") {
-            Label(state.activeStackCount == 0 ? "Profile Switcher Off" : "Profile Switcher On", systemImage: "square.stack.3d.up")
+            Label(state.activeStackCount == 0 ? "Window Switcher Off" : "Window Switcher On", systemImage: "square.stack.3d.up")
             if state.overlayHidden {
-                Label("Profile Widgets Hidden", systemImage: "eye.slash")
+                Label("Window Widgets Hidden", systemImage: "eye.slash")
                     .foregroundStyle(.secondary)
             }
             Label(state.overlayShortcutDescription, systemImage: "keyboard")

@@ -10,6 +10,7 @@ extension Notification.Name {
     static let stackerSelectTargetApplication = Notification.Name("stackerSelectTargetApplication")
     static let stackerAutoStackApplication = Notification.Name("stackerAutoStackApplication")
     static let stackerMoveWindowInStack = Notification.Name("stackerMoveWindowInStack")
+    static let stackerReorderWindowsInStack = Notification.Name("stackerReorderWindowsInStack")
     static let stackerAddWindowToStack = Notification.Name("stackerAddWindowToStack")
     static let stackerRemoveWindowFromStack = Notification.Name("stackerRemoveWindowFromStack")
     static let stackerFocusApplicationStack = Notification.Name("stackerFocusApplicationStack")
@@ -74,6 +75,12 @@ struct WindowChoice: Identifiable {
     }
 }
 
+enum WindowChoiceID {
+    static func script(processIdentifier: pid_t, windowIndex: Int) -> UInt {
+        (UInt(UInt32(bitPattern: processIdentifier)) << 32) | UInt(UInt32(windowIndex))
+    }
+}
+
 struct ScriptWindowState {
     let index: Int
     let title: String
@@ -93,6 +100,8 @@ struct SidebarActiveStackSnapshot {
     let bundleIdentifier: String?
     let processIdentifier: pid_t
     let titles: [String]
+    let activeWindows: [SidebarWindowSnapshot]
+    let inactiveWindows: [SidebarWindowSnapshot]
     let widgetHidden: Bool
     let overlayHealth: StackOverlayHealth
 }
@@ -100,6 +109,7 @@ struct SidebarActiveStackSnapshot {
 struct SidebarWindowSnapshot: Identifiable {
     let id: UInt
     let title: String
+    let accent: StackPillAccent?
 }
 
 struct SidebarSnapshot {

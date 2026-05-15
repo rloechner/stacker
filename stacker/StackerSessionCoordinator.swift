@@ -78,6 +78,39 @@ final class StackerSessionCoordinator {
         syncCombineOverlay()
     }
 
+    func reorderWindowsInSession(
+        store: StackerSessionStore,
+        targetPID: pid_t?,
+        pid: pid_t,
+        orderedIDs: [UInt],
+        refreshOverlay: (ActiveStackSession) -> Void,
+        syncSelectionState: () -> Void,
+        postSidebarSnapshot: () -> Void,
+        syncCombineOverlay: () -> Void
+    ) {
+        guard let session = store.activeStackSessions.first(where: { $0.app.processIdentifier == pid }) else { return }
+
+        let currentIDs = Set(session.windowOrder)
+        let requestedIDs = Set(orderedIDs)
+        guard currentIDs == requestedIDs, orderedIDs != session.windowOrder else { return }
+
+        guard session.controller.regroupWindows(in: orderedIDs) else { return }
+        session.windowOrder = orderedIDs
+        session.windowIDs = Set(orderedIDs)
+        session.windowTitles = session.controller.groupedTitles
+        refreshOverlay(session)
+
+        if targetPID == pid {
+            store.groupedTitles = session.windowTitles
+            store.activeWindowIDs = session.windowIDs
+            store.activeWindowOrder = session.windowOrder
+            syncSelectionState()
+        }
+
+        postSidebarSnapshot()
+        syncCombineOverlay()
+    }
+
     func addWindowToSession(
         store: StackerSessionStore,
         targetPID: pid_t?,

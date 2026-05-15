@@ -129,6 +129,7 @@ struct ContentView: View {
             .onAppear(perform: handleAppear)
             .onChange(of: selectedTargetPID) { _, newValue in
                 guard let newValue else { return }
+                prepareForTargetSwitch(to: newValue)
                 workflowCoordinator.handleSelectedTargetChange(
                     newValue: newValue,
                     eligibleApplications: eligibleApplications,
@@ -173,7 +174,7 @@ struct ContentView: View {
             )) {
                 Alert(
                     title: Text("Accessibility Permission Required"),
-                    message: Text("Stacker needs Accessibility permission to inspect Chrome profile windows and keep them synchronized."),
+                    message: Text("Stacker needs Accessibility permission to inspect browser windows and keep them synchronized."),
                     primaryButton: .default(Text("Open System Settings"), action: openAccessibilitySettings),
                     secondaryButton: .cancel()
                 )
@@ -221,8 +222,8 @@ struct ContentView: View {
                 .font(presentation == .popover ? .headline : .title2.weight(.semibold))
 
             Text(presentation == .popover
-                 ? "Switch between open Chrome profile windows from one widget."
-                 : "Turn Chrome profile switching on, tune the widget, and jump between open profile windows.")
+                 ? "Switch between open browser windows from one widget."
+                 : "Turn browser window switching on, tune the widget, and jump between open windows.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -237,7 +238,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Accessibility access is still needed")
                     .font(.subheadline.weight(.semibold))
-                Text("Approve Stacker in System Settings so the profile switcher can inspect Chrome windows and keep them aligned.")
+                Text("Approve Stacker in System Settings so the switcher can inspect browser windows and keep them aligned.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -267,11 +268,11 @@ struct ContentView: View {
     private var workspaceHeaderSection: some View {
         HStack(alignment: .top, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(appName ?? "Open Chrome Profile Windows")
+                Text(appName ?? "Open Browser Windows")
                     .font(.title3.weight(.semibold))
                 Text(targetApplication == nil
-                     ? "Open at least two Chrome profile windows, then refresh."
-                     : "Stacker uses the Chrome windows that are already open. Pick the profile windows you want in the switcher.")
+                     ? "Open at least two windows in a supported browser, then refresh."
+                     : "Stacker uses the browser windows that are already open. Pick the windows you want in the switcher.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -280,7 +281,7 @@ struct ContentView: View {
 
             VStack(alignment: .trailing, spacing: 8) {
                 if let targetApplication {
-                    Label("\(targetApplication.windowCount) profile windows", systemImage: "square.on.square")
+                    Label("\(targetApplication.windowCount) windows", systemImage: "square.on.square")
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -307,10 +308,10 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Chrome")
+                    Text("Browsers")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    Text(appName ?? "Open Chrome with at least two profile windows.")
+                    Text(appName ?? "Open a supported browser with at least two windows.")
                         .font(.subheadline.weight(.medium))
                 }
 
@@ -326,7 +327,7 @@ struct ContentView: View {
             }
 
             if eligibleApplications.isEmpty {
-                Text("No open Chrome profile windows available.")
+                Text("No supported browser windows available.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
@@ -344,7 +345,7 @@ struct ContentView: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(app.name)
                                         .font(.subheadline.weight(.semibold))
-                                    Text("\(app.windowCount) profile windows")
+                                    Text("\(app.windowCount) windows")
                                         .font(.caption)
                                         .foregroundStyle(secondaryColor)
                                 }
@@ -378,7 +379,7 @@ struct ContentView: View {
                 value: appName ?? "None"
             )
             miniStatusCard(
-                title: "Profiles",
+                title: "Windows",
                 value: "\(availableWindows.count)"
             )
             miniStatusCard(
@@ -392,9 +393,9 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Choose Profile Windows")
+                    Text("Choose Browser Windows")
                         .font(.headline)
-                    Text("Pick the open Chrome profile windows that should share one desktop slot.")
+                    Text("Pick the open browser windows that should share one desktop slot.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -416,7 +417,7 @@ struct ContentView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(window.title)
                                     .font(.subheadline.weight(.medium))
-                                Text("Include this profile window in the switcher")
+                                Text("Include this browser window in the switcher")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -429,7 +430,7 @@ struct ContentView: View {
             }
             .frame(maxHeight: 260)
 
-            Button("Create Profile Switcher") {
+            Button("Create Window Switcher") {
                 let selectedWindows = availableWindows.filter(\.isSelected)
                 startStack(with: selectedWindows)
             }
@@ -440,11 +441,11 @@ struct ContentView: View {
 
     private var emptyStateSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("No Active Profile Switcher")
+            Text("No Active Window Switcher")
                 .font(.headline)
             Text(targetApplication == nil
-                 ? (presentation == .popover ? "Open at least two Chrome profile windows, then refresh." : "Open Chrome with two or more profile windows to start.")
-                 : "Stacker will load open Chrome profile windows automatically. Once they appear, pick the ones you want linked together.")
+                 ? (presentation == .popover ? "Open at least two browser windows, then refresh." : "Open a supported browser with two or more windows to start.")
+                 : "Stacker will load open browser windows automatically. Once they appear, pick the ones you want linked together.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -456,7 +457,7 @@ struct ContentView: View {
     private var centerActions: some View {
         HStack {
             if isLoadingWindows {
-                ProgressView("Reading Chrome windows…")
+                ProgressView("Reading browser windows...")
                     .controlSize(.small)
             }
 
@@ -568,10 +569,10 @@ struct ContentView: View {
     @ViewBuilder
     private var activeStackSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Active Profile Switcher")
+            Text("Active Window Switcher")
                 .font(.subheadline.weight(.semibold))
 
-            Text("Open Chrome profile windows stay aligned while you move or resize any one of them.")
+            Text("Open browser windows stay aligned while you move or resize any one of them.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -610,7 +611,7 @@ struct ContentView: View {
             if !inactiveWindows.isEmpty {
                 Divider()
 
-                Text("Available Profile Windows")
+                Text("Available Browser Windows")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
 
@@ -686,6 +687,7 @@ struct ContentView: View {
     private func restoreSelectedApplicationContext() {
         if let selectedTargetPID,
            let selectedApp = eligibleApplications.first(where: { $0.processIdentifier == selectedTargetPID }) {
+            prepareForTargetSwitch(to: selectedApp.processIdentifier)
             targetApplication = selectedApp
             appName = selectedApp.name
             targetPID = selectedApp.processIdentifier
@@ -694,6 +696,16 @@ struct ContentView: View {
             appName = nil
             targetPID = nil
         }
+    }
+
+    private func prepareForTargetSwitch(to pid: pid_t) {
+        guard targetPID != pid else { return }
+        availableWindows = []
+        isSelectingWindows = false
+        groupedTitles = []
+        activeWindowIDs = []
+        activeWindowOrder = []
+        errorMessage = nil
     }
 
     private func removeStackSession(for pid: pid_t) {
@@ -933,6 +945,19 @@ struct ContentView: View {
         )
     }
 
+    private func reorderWindowsInSession(for pid: pid_t, orderedIDs: [UInt]) {
+        sessionCoordinator.reorderWindowsInSession(
+            store: sessionStore,
+            targetPID: targetPID,
+            pid: pid,
+            orderedIDs: orderedIDs,
+            refreshOverlay: refreshOverlay,
+            syncSelectionState: syncSelectionState,
+            postSidebarSnapshot: postSidebarSnapshot,
+            syncCombineOverlay: syncCombineOverlay
+        )
+    }
+
     private func addWindowToSession(for pid: pid_t, id: UInt) {
         sessionCoordinator.addWindowToSession(
             store: sessionStore,
@@ -1118,6 +1143,11 @@ struct ContentView: View {
         eventCoordinator.startSidebarObservers(
             handlers: StackerSidebarEventHandlers(
                 onSelectTargetApplication: { pid in
+                    if selectedTargetPID == pid {
+                        Task { @MainActor in
+                            await loadFrontmostAppWindows()
+                        }
+                    }
                     selectedTargetPID = pid
                 },
                 onAutoStackApplication: { pid in
@@ -1137,6 +1167,7 @@ struct ContentView: View {
                 onRefreshApplications: {
                     Task { @MainActor in
                         await loadEligibleApplications()
+                        await loadFrontmostAppWindows()
                     }
                 },
                 onReadSelectedWindows: {
@@ -1163,16 +1194,16 @@ struct ContentView: View {
                     }
                 },
                 onMoveWindowInStack: { pid, windowID, direction in
-                    guard pid == targetPID else { return }
-                    moveActiveWindow(windowID, by: direction)
+                    moveWindowInSession(for: pid, id: windowID, by: direction)
+                },
+                onReorderWindowsInStack: { pid, windowIDs in
+                    reorderWindowsInSession(for: pid, orderedIDs: windowIDs)
                 },
                 onAddWindowToStack: { pid, windowID in
-                    guard pid == targetPID else { return }
-                    addWindowToActiveStack(windowID)
+                    addWindowToSession(for: pid, id: windowID)
                 },
                 onRemoveWindowFromStack: { pid, windowID in
-                    guard pid == targetPID else { return }
-                    removeWindowFromActiveStack(windowID)
+                    removeWindowFromSession(for: pid, id: windowID)
                 },
                 onFocusApplicationStack: { pid in
                     focusApplicationStack(for: pid)
@@ -1205,14 +1236,14 @@ struct ContentView: View {
     private func handleSystemWake() {
         Task { @MainActor in
             errorMessage = nil
-            appendDebug("System wake detected; refreshing Chrome profile windows.")
+            appendDebug("System wake detected; refreshing browser windows.")
             try? await Task.sleep(for: .milliseconds(900))
-            await refreshChromeSessionsAfterWake()
+            await refreshBrowserSessionsAfterWake()
         }
     }
 
     @MainActor
-    private func refreshChromeSessionsAfterWake() async {
+    private func refreshBrowserSessionsAfterWake() async {
         refreshAccessibilityState()
         guard workspaceController.isAccessibilityTrusted() else {
             showAccessibilityAlert = true
@@ -1220,7 +1251,7 @@ struct ContentView: View {
         }
 
         let previousSelectedPID = selectedTargetPID
-        let sessionsToRefresh = activeStackSessions.filter { $0.app.isChrome }
+        let sessionsToRefresh = activeStackSessions.filter { $0.app.isSupportedBrowser }
 
         await loadEligibleApplications()
 
@@ -1334,11 +1365,13 @@ struct ContentView: View {
         await workspaceController.loadEligibleApplications(activeStackSessions: activeStackSessions)
         if let selectedTargetPID,
            let selectedApp = eligibleApplications.first(where: { $0.processIdentifier == selectedTargetPID }) {
+            prepareForTargetSwitch(to: selectedApp.processIdentifier)
             targetApplication = selectedApp
             appName = selectedApp.name
             targetPID = selectedApp.processIdentifier
             syncCurrentStackState()
         } else if let firstApp = eligibleApplications.first {
+            prepareForTargetSwitch(to: firstApp.processIdentifier)
             selectedTargetPID = firstApp.processIdentifier
             targetApplication = firstApp
             appName = firstApp.name
@@ -1433,7 +1466,7 @@ struct ContentView: View {
         debugMessages = []
 
         guard let targetApplication else {
-            errorMessage = "No Chrome target is available yet. Open at least two Chrome profile windows, then refresh Stacker."
+            errorMessage = "No supported browser is available yet. Open at least two browser windows, then refresh Stacker."
             return
         }
 

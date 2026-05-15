@@ -33,8 +33,11 @@ For each app, test:
 
 | App | Scenario | Rating | Notes |
 | --- | --- | --- | --- |
-| Chrome | Three profile windows, same size | Untested | Primary target use case. |
-| Safari | Multiple windows/profiles | Untested | Check whether profile/window state exposes stable titles. |
+| Chrome | Three browser windows, same size | Untested | Primary supported browser. |
+| Brave | Three browser windows, same size | Untested | Chromium browser. Check title normalization. |
+| Safari | Three browser windows, same size | Untested | Check whether window state exposes stable titles. |
+| Edge | Three browser windows, same size | Untested | Chromium browser. Check title normalization. |
+| Firefox | Three browser windows, same size | Untested | Check Accessibility window discovery and title normalization. |
 | Finder | Multiple normal windows | Untested | Useful baseline for native AppKit windows. |
 | Terminal | Multiple windows | Untested | Check behavior with tabs and window title changes. |
 | VS Code | Multiple project windows | Untested | Electron target. |

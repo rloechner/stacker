@@ -5,6 +5,10 @@ enum MainWindowViewActions {
         NotificationCenter.default.post(name: .stackerRefreshApplications, object: nil)
     }
 
+    static func readSelectedWindows() {
+        NotificationCenter.default.post(name: .stackerReadSelectedWindows, object: nil)
+    }
+
     static func selectApplication(_ pid: Int32, focusStack: Bool) {
         NotificationCenter.default.post(
             name: .stackerSelectTargetApplication,
@@ -54,6 +58,14 @@ enum MainWindowViewActions {
             name: .stackerMoveWindowInStack,
             object: nil,
             userInfo: ["pid": pid, "windowID": windowID, "direction": direction]
+        )
+    }
+
+    static func reorderWindowsInStack(pid: Int32, windowIDs: [Int]) {
+        NotificationCenter.default.post(
+            name: .stackerReorderWindowsInStack,
+            object: nil,
+            userInfo: ["pid": pid, "windowIDs": windowIDs]
         )
     }
 

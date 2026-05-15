@@ -28,12 +28,12 @@ struct stackerApp: App {
                 }
                 .keyboardShortcut("0", modifiers: [.command])
 
-                Button("Refresh Chrome") {
+                Button("Refresh Browsers") {
                     NotificationCenter.default.post(name: .stackerRefreshApplications, object: nil)
                 }
                 .keyboardShortcut("r", modifiers: [.command])
 
-                Button(overlayVisibilityController.isHidden ? "Show Profile Widgets" : "Hide Profile Widgets") {
+                Button(overlayVisibilityController.isHidden ? "Show Window Widgets" : "Hide Window Widgets") {
                     overlayVisibilityController.toggleOverlayVisibility()
                 }
             }

@@ -1,9 +1,22 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct MainWindowView: View {
-    private struct EditorWindowSnapshot: Identifiable {
+    fileprivate struct EditorWindowSnapshot: Identifiable {
         let id: Int
         let title: String
+        let accent: StackPillAccent?
+    }
+
+    private struct ActiveStackViewSnapshot {
+        let appName: String
+        let bundleIdentifier: String?
+        let pid: Int32
+        let titles: [String]
+        let activeWindows: [EditorWindowSnapshot]
+        let inactiveWindows: [EditorWindowSnapshot]
+        let widgetHidden: Bool
+        let overlayHealth: StackOverlayHealth
     }
 
     private struct AppSnapshot: Identifiable {
@@ -26,7 +39,7 @@ struct MainWindowView: View {
 
         var statusMessage: String {
             guard isActive else {
-                return "Chrome profile windows are ready to become a switcher."
+                return "Browser windows are ready to become a switcher."
             }
             if widgetHidden {
                 return StackOverlayHealth.hidden.surfaceMessage
@@ -54,11 +67,12 @@ struct MainWindowView: View {
     }
 
     @State private var appTiles: [(name: String, bundleIdentifier: String?, pid: Int32, windowCount: Int, widgetHidden: Bool)] = []
-    @State private var activeStacks: [(appName: String, bundleIdentifier: String?, pid: Int32, titles: [String], widgetHidden: Bool, overlayHealth: StackOverlayHealth)] = []
+    @State private var activeStacks: [ActiveStackViewSnapshot] = []
     @State private var selectedPID: Int32?
     @State private var expandedPID: Int32?
     @State private var selectedActiveWindows: [EditorWindowSnapshot] = []
     @State private var selectedInactiveWindows: [EditorWindowSnapshot] = []
+    @State private var draggingLinkedWindowID: Int?
     private let settingsSelectionID = Int32.min
 
     var body: some View {
@@ -76,8 +90,12 @@ struct MainWindowView: View {
                 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
-                .help("Refresh open Chrome profile windows")
+                .help("Refresh open browser windows")
             }
+        }
+        .onAppear {
+            MainWindowViewActions.refreshApplications()
+            MainWindowViewActions.readSelectedWindows()
         }
         .onChange(of: expandedPID) { _, newValue in
             guard newValue != settingsSelectionID else { return }
@@ -157,11 +175,11 @@ private extension MainWindowView {
                 .tag(settingsSelectionID)
             }
 
-            Section("Chrome") {
+            Section("Browsers") {
                 if apps.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        Label("No Profiles Ready", systemImage: "square.stack.3d.up.slash")
-                        Text("Open at least two Chrome profile windows.")
+                        Label("No Browser Windows Ready", systemImage: "square.stack.3d.up.slash")
+                        Text("Open at least two windows in a supported browser.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -212,7 +230,7 @@ private extension MainWindowView {
                 }
             }
 
-            Button("Refresh Chrome") {
+            Button("Refresh Browsers") {
                 MainWindowViewActions.refreshApplications()
             }
         }
@@ -222,7 +240,7 @@ private extension MainWindowView {
         if app.isActive {
             return "\(app.groupedCount) linked, \(app.statusTitle.lowercased())"
         }
-        return "\(app.windowCount) profile windows ready"
+        return "\(app.windowCount) browser windows ready"
     }
 
     @ViewBuilder
@@ -244,9 +262,9 @@ private extension MainWindowView {
                         } else {
                             statusSection(for: selectedApp)
                             if selectedApp.isActive {
-                                linkedProfilesSection(for: selectedApp)
+                                linkedWindowsSection(for: selectedApp)
                             }
-                            availableProfilesSection(for: selectedApp)
+                            availableWindowsSection(for: selectedApp)
                         }
                     }
                     .padding(20)
@@ -254,14 +272,14 @@ private extension MainWindowView {
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 } else {
                     ContentUnavailableView(
-                        "Open Chrome Profiles",
+                        "Open Browser Windows",
                         systemImage: "person.2.crop.square.stack",
-                        description: Text("Open two or more Chrome profile windows, then refresh Stacker.")
+                        description: Text("Open two or more windows in Chrome, Brave, Safari, Edge, or Firefox, then refresh Stacker.")
                     )
                     .frame(maxWidth: .infinity, minHeight: 420)
                 }
             }
-            .navigationTitle(selectedApp?.name ?? "Profile Switcher")
+            .navigationTitle(selectedApp?.name ?? "Window Switcher")
         }
     }
 
@@ -282,7 +300,7 @@ private extension MainWindowView {
                     statusPill(app.statusTitle, tint: app.statusTint)
                 }
 
-                Text(app.isActive ? app.statusMessage : "Turn on the switcher to link open Chrome profile windows and show the widget.")
+                Text(app.isActive ? app.statusMessage : "Turn on the switcher to link open browser windows and show the widget.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -293,7 +311,7 @@ private extension MainWindowView {
     private func statusSection(for app: AppSnapshot) -> some View {
         GroupBox {
             HStack(spacing: 12) {
-                metric("Profiles", value: "\(app.windowCount)", systemImage: "person.crop.circle")
+                metric("Windows", value: "\(app.windowCount)", systemImage: "macwindow")
                 metric("Linked", value: "\(selectedActiveWindows.count)", systemImage: "link")
                 metric("Available", value: "\(selectedInactiveWindows.count)", systemImage: "plus.rectangle.on.rectangle")
             }
@@ -346,7 +364,7 @@ private extension MainWindowView {
             HStack(spacing: 12) {
                 ProgressView()
                     .controlSize(.small)
-                Text("Reading open Chrome profile windows...")
+                Text("Reading open browser windows...")
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -355,59 +373,64 @@ private extension MainWindowView {
         }
     }
 
-    private func linkedProfilesSection(for app: AppSnapshot) -> some View {
+    private func linkedWindowsSection(for app: AppSnapshot) -> some View {
         GroupBox {
             if selectedActiveWindows.isEmpty {
-                emptySectionText("No linked profile windows are loaded right now.")
+                emptySectionText("No linked browser windows are loaded right now.")
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(selectedActiveWindows.enumerated()), id: \.element.id) { index, window in
                         if index > 0 { Divider() }
-                        linkedProfileRow(window, index: index, pid: app.pid)
+                        linkedWindowRow(window, index: index, pid: app.pid)
                     }
                 }
             }
         } label: {
-            Label("Linked Profile Windows", systemImage: "rectangle.connected.to.line.below")
+            Label("Linked Browser Windows", systemImage: "rectangle.connected.to.line.below")
         }
     }
 
-    private func availableProfilesSection(for app: AppSnapshot) -> some View {
+    private func availableWindowsSection(for app: AppSnapshot) -> some View {
         GroupBox {
             if selectedInactiveWindows.isEmpty {
-                emptySectionText(availableProfilesEmptyText(for: app))
+                emptySectionText(availableWindowsEmptyText(for: app))
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(selectedInactiveWindows.enumerated()), id: \.element.id) { index, window in
                         if index > 0 { Divider() }
-                        availableProfileRow(window, app: app)
+                        availableWindowRow(window, app: app)
                     }
                 }
             }
         } label: {
-            Label(app.isActive ? "Available Profile Windows" : "Ready To Link", systemImage: "square.stack.3d.up")
+            Label(app.isActive ? "Available Browser Windows" : "Ready To Link", systemImage: "square.stack.3d.up")
         }
     }
 
-    private func availableProfilesEmptyText(for app: AppSnapshot) -> String {
+    private func availableWindowsEmptyText(for app: AppSnapshot) -> String {
         if app.isActive {
-            return "No additional profile windows are available right now."
+            return "No additional browser windows are available right now."
         }
 
         if app.windowCount > 0 {
-            return "\(app.windowCount) open Chrome profile windows will be included when the switcher turns on."
+            return "\(app.windowCount) open browser windows will be included when the switcher turns on."
         }
 
-        return "Open at least two Chrome profile windows, then refresh Stacker."
+        return "Open at least two browser windows, then refresh Stacker."
     }
 
-    private func linkedProfileRow(_ window: EditorWindowSnapshot, index: Int, pid: Int32) -> some View {
+    private func linkedWindowRow(_ window: EditorWindowSnapshot, index: Int, pid: Int32) -> some View {
         let isFront = index == 0
+        let accentTint = window.accent?.tint ?? (isFront ? Color.accentColor : Color.secondary)
 
         return HStack(spacing: 12) {
+            Image(systemName: "line.3.horizontal")
+                .foregroundStyle(.tertiary)
+                .frame(width: 14)
+
             StackBadgeView(
                 token: "\(index + 1)",
-                tint: isFront ? .accentColor : .secondary,
+                tint: accentTint,
                 selected: isFront,
                 diameter: 30
             )
@@ -417,7 +440,7 @@ private extension MainWindowView {
                     .font(.body.weight(.medium))
                     .lineLimit(1)
 
-                Text(isFront ? "Front profile window" : "Linked profile window")
+                Text(isFront ? "Front browser window" : "Linked browser window")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -425,42 +448,33 @@ private extension MainWindowView {
 
             Spacer()
 
-            rowControls(window: window, index: index, pid: pid)
-        }
-        .padding(.vertical, 10)
-    }
-
-    private func rowControls(window: EditorWindowSnapshot, index: Int, pid: Int32) -> some View {
-        HStack(spacing: 4) {
-            Button {
-                MainWindowViewActions.moveWindowInStack(pid: pid, windowID: window.id, direction: -1)
-            } label: {
-                Image(systemName: "chevron.up")
-            }
-            .disabled(index == 0)
-            .help("Move up")
-
-            Button {
-                MainWindowViewActions.moveWindowInStack(pid: pid, windowID: window.id, direction: 1)
-            } label: {
-                Image(systemName: "chevron.down")
-            }
-            .disabled(index >= selectedActiveWindows.count - 1)
-            .help("Move down")
-
             Button(role: .destructive) {
                 MainWindowViewActions.removeWindowFromStack(pid: pid, windowID: window.id)
             } label: {
-                Image(systemName: "minus.circle")
+                Label("Remove", systemImage: "minus.circle")
             }
-            .help("Remove from switcher")
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .help("Remove this window from the stack")
         }
-        .buttonStyle(.borderless)
-        .controlSize(.small)
-        .foregroundStyle(.secondary)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .onDrag {
+            draggingLinkedWindowID = window.id
+            return NSItemProvider(object: "\(window.id)" as NSString)
+        }
+        .onDrop(
+            of: [.text],
+            delegate: LinkedWindowDropDelegate(
+                targetWindow: window,
+                windows: $selectedActiveWindows,
+                draggingWindowID: $draggingLinkedWindowID,
+                pid: pid
+            )
+        )
     }
 
-    private func availableProfileRow(_ window: EditorWindowSnapshot, app: AppSnapshot) -> some View {
+    private func availableWindowRow(_ window: EditorWindowSnapshot, app: AppSnapshot) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "macwindow")
                 .foregroundStyle(.secondary)
@@ -530,17 +544,24 @@ private extension MainWindowView {
         }
 
         activeStacks = snapshot.activeStacks.map { stack in
-            (appName: stack.appName, bundleIdentifier: stack.bundleIdentifier, pid: stack.processIdentifier, titles: stack.titles, widgetHidden: stack.widgetHidden, overlayHealth: stack.overlayHealth)
+            ActiveStackViewSnapshot(
+                appName: stack.appName,
+                bundleIdentifier: stack.bundleIdentifier,
+                pid: stack.processIdentifier,
+                titles: stack.titles,
+                activeWindows: stack.activeWindows.map { window in
+                    EditorWindowSnapshot(id: Int(window.id), title: window.title, accent: window.accent)
+                },
+                inactiveWindows: stack.inactiveWindows.map { window in
+                    EditorWindowSnapshot(id: Int(window.id), title: window.title, accent: window.accent)
+                },
+                widgetHidden: stack.widgetHidden,
+                overlayHealth: stack.overlayHealth
+            )
         }
 
         selectedPID = snapshot.selectedPID
-
-        selectedActiveWindows = snapshot.activeWindows.map { window in
-            EditorWindowSnapshot(id: Int(window.id), title: window.title)
-        }
-        selectedInactiveWindows = snapshot.inactiveWindows.map { window in
-            EditorWindowSnapshot(id: Int(window.id), title: window.title)
-        }
+        applySelectedWindows(from: snapshot)
 
         let knownPIDs = Set(snapshot.apps.map(\.processIdentifier) + snapshot.activeStacks.map(\.processIdentifier))
         if let expandedPID, expandedPID != settingsSelectionID, !knownPIDs.contains(expandedPID) {
@@ -551,8 +572,65 @@ private extension MainWindowView {
         }
     }
 
+    private func applySelectedWindows(from snapshot: SidebarSnapshot) {
+        let preferredPID = expandedPID == settingsSelectionID ? snapshot.selectedPID : expandedPID ?? snapshot.selectedPID
+        if let preferredPID,
+           let activeStack = activeStacks.first(where: { $0.pid == preferredPID }) {
+            selectedActiveWindows = activeStack.activeWindows
+            selectedInactiveWindows = activeStack.inactiveWindows
+            return
+        }
+
+        guard snapshot.selectedPID == preferredPID else {
+            selectedActiveWindows = []
+            selectedInactiveWindows = []
+            return
+        }
+
+        selectedActiveWindows = snapshot.activeWindows.map { window in
+            EditorWindowSnapshot(id: Int(window.id), title: window.title, accent: window.accent)
+        }
+        selectedInactiveWindows = snapshot.inactiveWindows.map { window in
+            EditorWindowSnapshot(id: Int(window.id), title: window.title, accent: window.accent)
+        }
+    }
+
     func toggleWidgetVisibility(forBundleIdentifier bundleIdentifier: String?, appName: String, pid: Int32) {
         _ = OverlayAppVisibilityPreference.toggle(bundleIdentifier: bundleIdentifier, appName: appName)
         MainWindowViewActions.toggleApplicationOverlayVisibility(bundleIdentifier: bundleIdentifier, appName: appName, pid: pid)
+    }
+}
+
+private struct LinkedWindowDropDelegate: DropDelegate {
+    let targetWindow: MainWindowView.EditorWindowSnapshot
+    @Binding var windows: [MainWindowView.EditorWindowSnapshot]
+    @Binding var draggingWindowID: Int?
+    let pid: Int32
+
+    func dropEntered(info: DropInfo) {
+        guard let draggingWindowID,
+              draggingWindowID != targetWindow.id,
+              let sourceIndex = windows.firstIndex(where: { $0.id == draggingWindowID }),
+              let targetIndex = windows.firstIndex(where: { $0.id == targetWindow.id }) else {
+            return
+        }
+
+        withAnimation(.default) {
+            let movedWindow = windows.remove(at: sourceIndex)
+            windows.insert(movedWindow, at: targetIndex)
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        MainWindowViewActions.reorderWindowsInStack(
+            pid: pid,
+            windowIDs: windows.map(\.id)
+        )
+        draggingWindowID = nil
+        return true
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
     }
 }

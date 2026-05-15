@@ -315,7 +315,7 @@ private struct CombineOverlayView: View {
     private var primaryTitle: String {
         switch style {
         case .createStack:
-            return "Link Profiles"
+            return "Link Windows"
         case .addBack:
             return "Add Back"
         }
@@ -333,7 +333,7 @@ private struct CombineOverlayView: View {
     private var secondaryTitle: String {
         switch style {
         case .createStack(let windowCount):
-            return "Link \(windowCount) open Chrome profile windows"
+            return "Link \(windowCount) open browser windows"
         case .addBack(let title):
             return "Add \(title) back into this switcher"
         }
@@ -711,7 +711,7 @@ private struct StackOverlayStripView: View {
         .coordinateSpace(name: "StackOverlayCollapsedStrip")
         .compositingGroup()
         .contextMenu { controlsContextMenu }
-        .help("Click a profile icon to focus its Chrome window. Drag the widget to move it.")
+        .help("Click a window icon to focus its browser window. Drag the widget to move it.")
         .onPreferenceChange(StackOverlayCollapsedItemFramePreferenceKey.self) { collapsedItemFrames = $0 }
         .onPreferenceChange(StackOverlayChromeActionFramePreferenceKey.self) { chromeActionFrames = $0 }
     }
@@ -1480,7 +1480,7 @@ private struct StackOverlayStripView: View {
             Label("Reset Position", systemImage: "arrow.uturn.backward")
         }
         Button(action: onHideWidget) {
-            Label("Hide Profile Widget", systemImage: "eye.slash")
+            Label("Hide Window Widget", systemImage: "eye.slash")
         }
         Button(role: .destructive, action: onTurnOff) {
             Label("Turn Off Stack", systemImage: "power")
@@ -2015,7 +2015,7 @@ private struct StackOverlayControlsDrawerView: View {
             drawerButton("rectangle.compress.vertical", help: "Compat mode", action: { onSetDensityMode(.compact) })
             drawerButton("capsule.lefthalf.filled", help: "Comfortable size", action: { onSetDensityMode(.comfortable) })
             drawerButton("rectangle.expand.vertical", help: "Full mode", action: { onSetDensityMode(.expanded) })
-            drawerButton("eye.slash", help: "Hide the Chrome profile widget", action: onHideWidget)
+            drawerButton("eye.slash", help: "Hide the browser window widget", action: onHideWidget)
             drawerButton("list.bullet.rectangle", help: "Open this stack in Stacker", action: onOpenEditor)
             drawerButton("power", help: "Break this stack apart", role: .destructive, action: onTurnOff)
         }

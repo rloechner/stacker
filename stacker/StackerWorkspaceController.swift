@@ -62,7 +62,7 @@ final class StackerWorkspaceController {
     }
 
     func isEligibleTargetApp(_ app: NSRunningApplication) -> Bool {
-        ChromeProfileSupport.isSupportedChrome(app)
+        BrowserSupport.isSupportedBrowser(app)
     }
 
     func loadEligibleApplications(activeStackSessions: [ActiveStackSession]) async {
@@ -80,7 +80,7 @@ final class StackerWorkspaceController {
 
         var discoveredApplications: [TargetApplication] = []
         for app in runningApplications {
-            let name = app.localizedName ?? ChromeProfileSupport.appName
+            let name = app.localizedName ?? BrowserSupport.browser(for: app)?.appName ?? BrowserSupport.fallbackAppName
             let scriptWindowCount = WindowScriptBridge.windowCount(forProcessIdentifier: app.processIdentifier) ?? 0
             let activeSessionWindowCount = activeStackSessions.first(where: { $0.app.processIdentifier == app.processIdentifier })?.windowTitles.count ?? 0
             let windowCount = max(scriptWindowCount, activeSessionWindowCount)
@@ -125,7 +125,7 @@ final class StackerWorkspaceController {
         case .apiDisabled:
             return "Accessibility access is disabled."
         case .attributeUnsupported:
-            return "Chrome does not expose profile window information through Accessibility."
+            return "The browser does not expose window information through Accessibility."
         case .cannotComplete:
             return "macOS could not complete the Accessibility request."
         case .failure:
@@ -133,23 +133,23 @@ final class StackerWorkspaceController {
         case .illegalArgument:
             return "The Accessibility request used an invalid argument."
         case .invalidUIElement:
-            return "Chrome is no longer available."
+            return "The browser is no longer available."
         case .notImplemented:
-            return "Chrome does not implement the required Accessibility behavior."
+            return "The browser does not implement the required Accessibility behavior."
         case .notificationAlreadyRegistered:
             return "That window was already being observed."
         case .notificationNotRegistered:
             return "That window was not being observed."
         case .notificationUnsupported:
-            return "Chrome does not support window move notifications."
+            return "The browser does not support window move notifications."
         case .noValue:
-            return "Chrome did not return a focused or main window."
+            return "The browser did not return a focused or main window."
         case .actionUnsupported:
-            return "Chrome does not support the requested Accessibility action."
+            return "The browser does not support the requested Accessibility action."
         case .notEnoughPrecision:
             return "macOS could not set the requested window frame precisely enough."
         case .parameterizedAttributeUnsupported:
-            return "Chrome does not support the requested Accessibility query."
+            return "The browser does not support the requested Accessibility query."
         case .invalidUIElementObserver:
             return "The Accessibility observer is no longer valid."
         @unknown default:

@@ -37,7 +37,7 @@ final class StackerWorkflowCoordinator {
     ) {
         let windows = availableWindows
         guard windows.count >= 2 else {
-            setErrorMessage("Open at least two readable Chrome profile windows before turning on profile switching.")
+            setErrorMessage("Open at least two readable browser windows before turning on the switcher.")
             return
         }
 

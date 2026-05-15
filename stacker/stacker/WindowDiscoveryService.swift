@@ -25,14 +25,16 @@ struct WindowDiscoveryService {
 
         guard fetchResult.error == .success else {
             let scriptWindows = WindowScriptBridge.fetchWindows(forProcessIdentifier: targetApplication.processIdentifier)
-            if !scriptWindows.isEmpty {
+            let normalScriptWindows = scriptWindows.filter { isNormalBrowserWindow(size: $0.frame.size) }
+            if !normalScriptWindows.isEmpty {
                 return WindowDiscoveryOutcome(
-                    availableWindows: scriptWindows.map { state in
-                        let title = targetApplication.isChrome
-                            ? ChromeProfileSupport.profileWindowTitle(rawTitle: state.title, fallbackIndex: state.index)
-                            : (state.title.isEmpty ? "Window \(state.index)" : state.title)
+                    availableWindows: normalScriptWindows.map { state in
+                        let title = BrowserSupport.windowTitle(for: targetApplication, rawTitle: state.title, fallbackIndex: state.index)
                         return WindowChoice(
-                            id: UInt(state.index),
+                            id: WindowChoiceID.script(
+                                processIdentifier: targetApplication.processIdentifier,
+                                windowIndex: state.index
+                            ),
                             title: title,
                             window: nil,
                             scriptIndex: state.index
@@ -43,9 +45,7 @@ struct WindowDiscoveryService {
                 )
             }
 
-            let errorMessage = targetApplication.isChrome
-                ? "Unable to read Chrome profile windows. \(message(for: fetchResult.error))"
-                : "Unable to read windows for \(targetApplication.name). \(message(for: fetchResult.error))"
+            let errorMessage = "Unable to read browser windows for \(targetApplication.name). \(message(for: fetchResult.error))"
             return WindowDiscoveryOutcome(
                 availableWindows: [],
                 shouldEnterSelectionMode: false,
@@ -58,13 +58,13 @@ struct WindowDiscoveryService {
             let role = movableWindow.role ?? window.role ?? "nil"
             let rawTitle = (movableWindow.title ?? window.title)?.trimmingCharacters(in: .whitespacesAndNewlines)
             let hasPosition = movableWindow.position != nil
-            let hasSize = movableWindow.size != nil
+            let size = movableWindow.size
+            let hasSize = size != nil
 
             guard role == kAXWindowRole as String else { return nil }
-            let title = targetApplication.isChrome
-                ? ChromeProfileSupport.profileWindowTitle(rawTitle: rawTitle, fallbackIndex: index + 1)
-                : ((rawTitle?.isEmpty == false) ? rawTitle! : "Window \(index + 1)")
+            let title = BrowserSupport.windowTitle(for: targetApplication, rawTitle: rawTitle, fallbackIndex: index + 1)
             guard hasPosition, hasSize else { return nil }
+            if let size, !isNormalBrowserWindow(size: size) { return nil }
 
             return WindowChoice(
                 id: CFHash(movableWindow),
@@ -78,15 +78,17 @@ struct WindowDiscoveryService {
             availableWindows: choices,
             shouldEnterSelectionMode: !choices.isEmpty,
             errorMessage: choices.isEmpty
-                ? (targetApplication.isChrome
-                    ? "No movable Chrome profile windows were found. Open at least two normal Chrome profile windows, then refresh."
-                    : "No movable windows were found for \(targetApplication.name). Make sure that app has normal desktop windows open.")
+                ? "No movable browser windows were found for \(targetApplication.name). Open at least two normal browser windows, then refresh."
                 : nil
         )
     }
 
     private func runningApplication(for targetApplication: TargetApplication) -> NSRunningApplication? {
         NSRunningApplication(processIdentifier: targetApplication.processIdentifier)
+    }
+
+    private func isNormalBrowserWindow(size: CGSize) -> Bool {
+        size.width >= 520 && size.height >= 420
     }
 
     private func resolveMovableWindow(from element: AXUIElement) -> AXUIElement {
@@ -239,7 +241,7 @@ struct WindowDiscoveryService {
         case .apiDisabled:
             return "Accessibility access is disabled."
         case .attributeUnsupported:
-            return "Chrome does not expose window information through Accessibility."
+            return "The browser does not expose window information through Accessibility."
         case .cannotComplete:
             return "macOS could not complete the Accessibility request."
         case .failure:
@@ -247,19 +249,19 @@ struct WindowDiscoveryService {
         case .illegalArgument:
             return "The Accessibility request used an invalid argument."
         case .invalidUIElement:
-            return "Chrome is no longer available."
+            return "The browser is no longer available."
         case .notImplemented:
-            return "Chrome does not implement the required Accessibility behavior."
+            return "The browser does not implement the required Accessibility behavior."
         case .notificationUnsupported:
-            return "Chrome does not support window change notifications."
+            return "The browser does not support window change notifications."
         case .notificationAlreadyRegistered, .notificationNotRegistered:
             return "Window notifications could not be registered."
         case .noValue:
-            return "Chrome did not return any window data."
+            return "The browser did not return any window data."
         case .parameterizedAttributeUnsupported:
-            return "Chrome rejected the window query."
+            return "The browser rejected the window query."
         case .actionUnsupported:
-            return "Chrome does not support the requested window action."
+            return "The browser does not support the requested window action."
         case .notEnoughPrecision:
             return "macOS could not apply the window frame accurately."
         default:

@@ -24,6 +24,7 @@ struct SidebarSnapshotBuilder {
                 )
             },
             activeStacks: activeStackSessions.map { session in
+                let orderedWindows = session.controller.groupedWindowChoices(in: session.windowOrder)
                 let titles = session.windowOrder.map { id in
                     return displayTitle(id, session.windowTitles, session.windowOrder)
                 }
@@ -32,6 +33,20 @@ struct SidebarSnapshotBuilder {
                     bundleIdentifier: session.app.bundleIdentifier,
                     processIdentifier: session.app.processIdentifier,
                     titles: titles,
+                    activeWindows: orderedWindows.map { window in
+                        SidebarWindowSnapshot(
+                            id: window.id,
+                            title: window.title,
+                            accent: session.windowAccentStyles[window.id]
+                        )
+                    },
+                    inactiveWindows: session.availableWindowChoices.map { window in
+                        SidebarWindowSnapshot(
+                            id: window.id,
+                            title: window.title,
+                            accent: nil
+                        )
+                    },
                     widgetHidden: OverlayAppVisibilityPreference.isHidden(bundleIdentifier: session.app.bundleIdentifier, appName: session.app.name),
                     overlayHealth: session.overlayHealth
                 )
@@ -40,13 +55,17 @@ struct SidebarSnapshotBuilder {
             activeWindows: activeWindows.map { window in
                 SidebarWindowSnapshot(
                     id: window.id,
-                    title: window.title
+                    title: window.title,
+                    accent: activeStackSessions
+                        .first(where: { $0.windowIDs.contains(window.id) })?
+                        .windowAccentStyles[window.id]
                 )
             },
             inactiveWindows: inactiveWindows.map { window in
                 SidebarWindowSnapshot(
                     id: window.id,
-                    title: window.title
+                    title: window.title,
+                    accent: nil
                 )
             },
             availableWindowTitles: availableWindows.map(\.title),
