@@ -274,6 +274,18 @@ struct StackerMenuBarContent: View {
                             }
                         }
 
+                        if app.overlayHealth == .degraded {
+                            Button {
+                                NotificationCenter.default.post(
+                                    name: .stackerRetryDegradedStacks,
+                                    object: nil,
+                                    userInfo: ["pid": app.processIdentifier]
+                                )
+                            } label: {
+                                Label("Retry Stack", systemImage: "arrow.clockwise")
+                            }
+                        }
+
                         Divider()
                         Text("\(app.windowCount) windows")
                             .foregroundStyle(.secondary)
@@ -332,18 +344,25 @@ struct StackerMenuBarLabel: View {
     let degradedCount: Int
 
     private var menuBarIcon: NSImage {
-        // More reliable way to get the app icon, especially when launching from Xcode (Debug).
-        // NSImage(named:) looks in the asset catalog and works better during early launch / Debug builds.
+        // Standard and most reliable way for macOS menu bar apps:
+        // Use a dedicated small image asset named "MenuBarIcon" (recommended 18pt or 22pt).
+        // This works reliably in both Release and Xcode Debug builds.
         let baseIcon: NSImage
 
-        if let namedIcon = NSImage(named: "AppIcon") {
-            baseIcon = namedIcon
-        } else if let appIcon = NSApp.applicationIconImage {
+        if let menuIcon = NSImage(named: "MenuBarIcon") {
+            baseIcon = menuIcon
+        } else if let appIcon = NSImage(named: "AppIcon") {
             baseIcon = appIcon
+        } else if let appImage = NSApp.applicationIconImage {
+            baseIcon = appImage
         } else {
             baseIcon = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "Stacker")!
         }
 
+        // We want the full color version of the icon (not a template/monochrome version)
+        baseIcon.isTemplate = false
+
+        // Resize cleanly to menu bar size (18pt is standard)
         let targetSize = NSSize(width: 18, height: 18)
         let resized = NSImage(size: targetSize)
         resized.lockFocus()
