@@ -22,6 +22,7 @@ struct MenuApplicationSnapshot: Identifiable {
 final class MenuBarStateStore: ObservableObject {
     @Published var eligibleApps: [MenuApplicationSnapshot] = []
     @Published var activeStackCount = 0
+    @Published var degradedStackCount = 0
     @Published var overlayHidden = UserDefaults.standard.bool(forKey: OverlayShortcutPreference.hiddenKey)
     @Published var overlayShortcutDescription = ""
 
@@ -193,6 +194,16 @@ final class MenuBarStateStore: ObservableObject {
             )
         }
         .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+        let newDegraded = eligibleApps.filter { $0.isActive && $0.overlayHealth == .degraded }.count
+        if newDegraded != degradedStackCount {
+            degradedStackCount = newDegraded
+            NotificationCenter.default.post(
+                name: .stackerDegradedStackCountDidChange,
+                object: nil,
+                userInfo: ["count": newDegraded]
+            )
+        }
     }
 
     private func updateShortcutDescription() {
@@ -290,12 +301,22 @@ struct StackerMenuBarContent: View {
 
         Section("Status") {
             Label(state.activeStackCount == 0 ? "Window Switcher Off" : "Window Switcher On", systemImage: "square.stack.3d.up")
+            if state.degradedStackCount > 0 {
+                Label("\(state.degradedStackCount) stack(s) need attention", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+            }
             if state.overlayHidden {
                 Label("Window Widgets Hidden", systemImage: "eye.slash")
                     .foregroundStyle(.secondary)
             }
             Label(state.overlayShortcutDescription, systemImage: "keyboard")
                 .foregroundStyle(.secondary)
+
+            if state.degradedStackCount > 0 {
+                Button("Retry Failed Stacks") {
+                    NotificationCenter.default.post(name: .stackerRetryDegradedStacks, object: nil)
+                }
+            }
         }
 
         Section {
@@ -308,8 +329,33 @@ struct StackerMenuBarContent: View {
 
 struct StackerMenuBarLabel: View {
     let count: Int
+    let degradedCount: Int
+
+    private var menuBarIcon: NSImage {
+        // Use the real Stacker app icon (from Assets.xcassets/AppIcon) scaled for the menu bar.
+        // Falls back to a generic stack symbol only if the app icon isn't available yet.
+        let baseIcon = NSApp.applicationIconImage
+            ?? NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "Stacker")!
+
+        let targetSize = NSSize(width: 18, height: 18)
+        let resized = NSImage(size: targetSize)
+        resized.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        baseIcon.draw(in: NSRect(origin: .zero, size: targetSize))
+        resized.unlockFocus()
+
+        return resized
+    }
 
     var body: some View {
-        Label("\(count)", systemImage: "square.stack.3d.up")
+        Label {
+            Text("\(count)")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+        } icon: {
+            Image(nsImage: menuBarIcon)
+                .renderingMode(.template)
+                .foregroundStyle(degradedCount > 0 ? Color.orange : Color.primary)
+        }
+        .labelStyle(.titleAndIcon)
     }
 }

@@ -617,17 +617,23 @@ private struct StackOverlayStripView: View {
     private var widgetMoveGutter: CGFloat { densityMetrics.widgetChromeInset }
 
     var body: some View {
-        collapsedEdgeMarker
-        .opacity(model.isWindowChanging ? 0.58 : 1.0)
-        .scaleEffect(model.isWindowChanging ? 0.98 : 1.0)
-        .animation(.easeOut(duration: 0.12), value: model.isWindowChanging)
-        .animation(.interactiveSpring(response: 0.18, dampingFraction: 0.86, blendDuration: 0.04), value: model.dockPosition)
-        .coordinateSpace(name: "StackOverlayWidget")
-        .padding(.horizontal, stackOverlayDragOverflowMargin)
-        .padding(.top, stackOverlayDragOverflowMargin)
-        .padding(.bottom, stackOverlayDragOverflowMargin + widgetBottomInset)
-        .fixedSize()
-        .overlayColorScheme(appearance)
+        if model.overlayHealth == .degraded {
+            // For degraded stacks the widget simply disappears (per user preference for clean failure).
+            // The stack remains in the sidebar/menu with "Paused" status and can be retried.
+            EmptyView()
+        } else {
+            collapsedEdgeMarker
+            .opacity(model.isWindowChanging ? 0.58 : 1.0)
+            .scaleEffect(model.isWindowChanging ? 0.98 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: model.isWindowChanging)
+            .animation(.interactiveSpring(response: 0.18, dampingFraction: 0.86, blendDuration: 0.04), value: model.dockPosition)
+            .coordinateSpace(name: "StackOverlayWidget")
+            .padding(.horizontal, stackOverlayDragOverflowMargin)
+            .padding(.top, stackOverlayDragOverflowMargin)
+            .padding(.bottom, stackOverlayDragOverflowMargin + widgetBottomInset)
+            .fixedSize()
+            .overlayColorScheme(appearance)
+        }
     }
 
     private var railBackgroundColors: [Color] {

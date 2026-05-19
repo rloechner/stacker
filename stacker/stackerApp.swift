@@ -15,7 +15,7 @@ struct stackerApp: App {
         MenuBarExtra {
             StackerMenuBarContent(state: menuBarState)
         } label: {
-            StackerMenuBarLabel(count: menuBarState.activeStackCount)
+            StackerMenuBarLabel(count: menuBarState.activeStackCount, degradedCount: menuBarState.degradedStackCount)
         }
 
         Settings {

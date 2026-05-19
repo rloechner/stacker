@@ -268,4 +268,22 @@ struct WindowDiscoveryService {
             return "Unknown Accessibility error \(error.rawValue)."
         }
     }
+
+    /// Returns true for errors that are often transient and worth retrying silently
+    /// (especially .cannotComplete, which Safari hits frequently).
+    static func isTransientDiscoveryError(_ error: AXError) -> Bool {
+        switch error {
+        case .cannotComplete, .failure, .noValue:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Best-effort classification from the human-readable message we already produce.
+    static func isTransientDiscoveryErrorForMessage(_ message: String) -> Bool {
+        return message.contains("could not complete") ||
+               message.contains("Accessibility request failed") ||
+               message.contains("did not return any window data")
+    }
 }

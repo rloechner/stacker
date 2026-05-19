@@ -127,21 +127,35 @@ Stacker is a SwiftUI/AppKit macOS app.
 - `stacker/SidebarSnapshotBuilder.swift`: main-window sidebar and detail snapshot generation.
 - `stacker/StackerWorkspaceController.swift`: eligible app tracking, selection state, permissions, and discovery errors.
 
-## Distribution Status
+## Getting Stacker
 
-Stacker currently builds as a local macOS app, but it is not ready for Mac App Store submission.
+Stacker is open source and free. You have two ways to run it:
 
-The main blocker is entitlement compatibility. The core behavior depends on Accessibility control of other apps and Apple Events/System Events fallback behavior, while Mac App Store apps are required to use App Sandbox. Direct distribution with Developer ID signing, Hardened Runtime, notarization, and clear permission onboarding is the more realistic path.
+### 1. Download a notarized DMG (easiest for most people)
+Pre-built, signed, and notarized releases will be attached to the GitHub Releases page. These are the recommended way to try Stacker without installing Xcode.
 
-See [docs/distribution-readiness.md](docs/distribution-readiness.md) for the current distribution assessment and [docs/compatibility-matrix.md](docs/compatibility-matrix.md) for release validation tracking.
+### 2. Build from source
+Developers and people who want the absolute latest can build directly:
 
-## Current Cleanup Priorities
+```sh
+script/build_and_run.sh
+```
 
-- Test browser window-title detection across real Chrome, Brave, Safari, Edge, and Firefox title variants.
-- Tighten widget edge and corner behavior across multi-monitor setups and different window sizes.
-- Add focused regression tests for stack/session logic that can run without controlling real apps.
-- Add signing and entitlement files for the chosen distribution channel.
-- Maintain the compatibility matrix for each supported browser, multi-monitor, Spaces, fullscreen, minimized windows, and wake-from-sleep behavior.
+The script builds a debug version into `/private/tmp/stacker-derived` (unsigned, for local use) and opens it. See the [Build And Run](#build-and-run) section for more options, including logging and verification modes.
+
+The first time you run any version you will be prompted for Accessibility permission (required for window inspection and control) and may see a one-time Automation prompt.
+
+See [docs/distribution-readiness.md](docs/distribution-readiness.md) for the technical reasoning behind the distribution choices and [docs/compatibility-matrix.md](docs/compatibility-matrix.md) for current browser validation status.
+
+## Current Focus Areas
+
+These are the areas where improvements and additional validation are most valuable:
+
+- Expand real-world testing coverage (especially Firefox and post-sleep recovery) and keep the compatibility matrix honest.
+- Improve widget behavior on complex multi-monitor setups, full-height windows, and after macOS Spaces changes.
+- Add a small number of focused unit tests for the pure session and ordering logic (no real browsers required).
+- Maintain clear documentation so new users can build from source or run a DMG with minimal friction.
+- Continue refining the attached widget and main-window admin experience for clarity and polish.
 
 ## Contributing & Support
 

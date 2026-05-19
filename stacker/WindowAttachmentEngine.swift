@@ -9,6 +9,7 @@ enum StackOverlayHealth: String {
     case minimizedOrFullscreen
     case permissionBlocked
     case unsupportedState
+    case degraded
 
     var surfaceTitle: String {
         switch self {
@@ -26,6 +27,8 @@ enum StackOverlayHealth: String {
             return "Needs Attention"
         case .unsupportedState:
             return "Unsupported State"
+        case .degraded:
+            return "Paused"
         }
     }
 
@@ -45,12 +48,14 @@ enum StackOverlayHealth: String {
             return "Accessibility permission is required to keep this stack attached."
         case .unsupportedState:
             return "This window state is outside v1 support."
+        case .degraded:
+            return "Stacker lost contact with the browser windows. The stack is paused."
         }
     }
 
     var isAttentionState: Bool {
         switch self {
-        case .clamped, .missingAnchor, .permissionBlocked:
+        case .clamped, .missingAnchor, .permissionBlocked, .degraded:
             return true
         case .visible, .hidden, .minimizedOrFullscreen, .unsupportedState:
             return false

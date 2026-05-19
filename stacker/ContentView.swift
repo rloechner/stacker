@@ -1268,8 +1268,13 @@ struct ContentView: View {
                 refreshedWindows: outcome.availableWindows
             )
 
-            guard refreshedWindows.count >= 2 else {
-                removeStackSession(for: session.app.processIdentifier)
+            if refreshedWindows.count < 2 {
+                if let error = outcome.errorMessage,
+                   WindowDiscoveryService.isTransientDiscoveryErrorForMessage(error) {
+                    markStackDegraded(for: session.app.processIdentifier, reason: error)
+                } else {
+                    removeStackSession(for: session.app.processIdentifier)
+                }
                 continue
             }
 
@@ -1476,7 +1481,32 @@ struct ContentView: View {
         availableWindows = outcome.availableWindows
         syncSelectionState()
         isSelectingWindows = outcome.shouldEnterSelectionMode
-        errorMessage = outcome.errorMessage
+
+        if let error = outcome.errorMessage {
+            let isTransient = WindowDiscoveryService.isTransientDiscoveryErrorForMessage(error)
+
+            if let existingSession = activeStackSessions.first(where: { $0.app.processIdentifier == targetApplication.processIdentifier }),
+               isTransient {
+                markStackDegraded(for: targetApplication.processIdentifier, reason: error)
+            } else {
+                errorMessage = error
+            }
+        }
+    }
+
+    private func markStackDegraded(for pid: pid_t, reason: String) {
+        guard let session = activeStackSessions.first(where: { $0.app.processIdentifier == pid }) else { return }
+
+        appendDebug("Marking stack degraded for \(session.app.name): \(reason)")
+
+        session.overlayHealth = .degraded
+        // Hide the widget for this degraded stack
+        runtimeCoordinator.refreshOverlay(for: session)   // will respect health
+
+        // Notify menu bar / sidebar that something needs attention
+        postActiveStackCount()
+        postSidebarSnapshot()
+        syncCombineOverlay()
     }
 }
 
