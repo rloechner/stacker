@@ -55,6 +55,16 @@ final class StackRuntimeCoordinator {
             return nil
         }
 
+        // Compute smart initial dock for brand new stacks
+        var initialDockPosition = existingSession?.overlayDockPosition ?? .top
+        if existingSession == nil, let firstWindow = windows.first {
+            if let axWindow = firstWindow.window {
+                let frame = CGRect(origin: axWindow.position ?? .zero, size: axWindow.size ?? .zero)
+                let (prefDock, _) = WindowAttachmentEngine.preferredInitialDockPositionAndSide(for: frame)
+                initialDockPosition = prefDock
+            }
+        }
+
         let activeWindowIDs = Set(windows.map(\.id))
         let activeWindowOrder = windows.map(\.id)
         let groupedTitles = controller.groupedTitles
@@ -62,7 +72,8 @@ final class StackRuntimeCoordinator {
             controller: controller,
             targetApplication: targetApplication,
             currentSession: existingSession,
-            handlers: overlayHandlers
+            handlers: overlayHandlers,
+            initialDockPosition: initialDockPosition
         )
 
         let defaultAccents = defaultAccentAssignments(for: windows, existingAccents: existingSession?.windowAccentStyles ?? [:])
@@ -80,7 +91,7 @@ final class StackRuntimeCoordinator {
             overlayLabelMode: existingSession?.overlayLabelMode ?? .names,
             overlayDensityMode: existingSession?.overlayDensityMode ?? .comfortable,
             overlayPlacementPreference: existingSession?.overlayPlacementPreference ?? StackOverlayPlacementPreferenceStore.current(),
-            overlayDockPosition: existingSession?.overlayDockPosition ?? .top
+            overlayDockPosition: existingSession?.overlayDockPosition ?? initialDockPosition
         )
         overlayController.onHealthChanged = { [weak session] health in
             session?.overlayHealth = health
@@ -179,7 +190,8 @@ final class StackRuntimeCoordinator {
         controller: WindowStackController,
         targetApplication: TargetApplication,
         currentSession: ActiveStackSession?,
-        handlers: StackOverlayCoordinatorHandlers
+        handlers: StackOverlayCoordinatorHandlers,
+        initialDockPosition: StackOverlayDockPosition
     ) -> StackOverlayPanelController {
         var overlayController: StackOverlayPanelController?
         let sessionPID = targetApplication.processIdentifier
@@ -188,7 +200,8 @@ final class StackRuntimeCoordinator {
         let labelMode = currentSession?.overlayLabelMode ?? .names
         let densityMode = currentSession?.overlayDensityMode ?? .comfortable
         let placementPreference = currentSession?.overlayPlacementPreference ?? StackOverlayPlacementPreferenceStore.current()
-        let dockPosition = currentSession?.overlayDockPosition ?? .top
+
+        let dockPosition = currentSession?.overlayDockPosition ?? initialDockPosition
 
         overlayController = StackOverlayPanelController(
             appPID: sessionPID,
@@ -218,6 +231,12 @@ final class StackRuntimeCoordinator {
             onReorder: handlers.onReorder,
             onRemove: handlers.onRemove
         )
+
+        if currentSession == nil {
+            // Force new stacks to start with left bias on top/bottom rails
+            overlayController?.forceLeftBiasForTopDock()
+        }
+
         return overlayController!
     }
 }

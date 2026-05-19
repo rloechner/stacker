@@ -212,7 +212,7 @@ private final class SecondaryClickGestureHandleView: NSView {
 
 enum SuggestionOverlayStyle {
     case createStack(windowCount: Int)
-    case addBack(title: String)
+    case addBack(titles: [String])   // multiple windows that can be added back
 }
 
 private struct CombineOverlayView: View {
@@ -290,6 +290,18 @@ private struct CombineOverlayView: View {
                                 .fill(Color.white.opacity(0.64))
                         )
                 }
+
+                // For Add Back, show a mini dot strip to resemble the main widget
+                if case .addBack(let titles) = style, titles.count > 1 {
+                    HStack(spacing: 4) {
+                        ForEach(Array(titles.prefix(4)), id: \.self) { _ in
+                            Circle()
+                                .fill(Color.accentColor.opacity(0.85))
+                                .frame(width: 6, height: 6)
+                        }
+                    }
+                    .padding(.leading, 4)
+                }
             }
             .allowsHitTesting(false)
             .padding(.horizontal, 12)
@@ -316,8 +328,8 @@ private struct CombineOverlayView: View {
         switch style {
         case .createStack:
             return "Link Windows"
-        case .addBack:
-            return "Add Back"
+        case .addBack(let titles):
+            return titles.count == 1 ? "Add Back" : "Add Back (\(titles.count))"
         }
     }
 
@@ -334,8 +346,12 @@ private struct CombineOverlayView: View {
         switch style {
         case .createStack(let windowCount):
             return "Link \(windowCount) open browser windows"
-        case .addBack(let title):
-            return "Add \(title) back into this switcher"
+        case .addBack(let titles):
+            if titles.count == 1 {
+                return "Add \(titles[0]) back into this stack"
+            } else {
+                return "Add any of these \(titles.count) windows back into the stack"
+            }
         }
     }
 }
@@ -1439,9 +1455,7 @@ private struct StackOverlayStripView: View {
 
     @ViewBuilder
     private var controlsContextMenu: some View {
-        Button(action: onFocusStack) {
-            Label("Focus Stack", systemImage: "rectangle.split.2x1")
-        }
+        // "Focus Stack" removed from right-click menu (user request)
         Button(action: onOpenEditor) {
             Label("Open In Stacker", systemImage: "list.bullet.rectangle")
         }
@@ -3376,6 +3390,15 @@ final class StackOverlayPanelController {
         syncVisibility()
     }
 
+    /// Called for brand new stacks to force the widget to start on the left side
+    /// of a top or bottom rail (instead of letting the first layout decide right).
+    func forceLeftBiasForTopDock() {
+        if dockPosition == .top || dockPosition == .bottom {
+            horizontalSide = .left
+            updateRootView()
+        }
+    }
+
     /// Returns the user's desired reset/initial position.
     /// Priority order (most user-friendly):
     /// 1. Top rail + left content (top-left) — whenever there's reasonable room on top
@@ -3386,29 +3409,7 @@ final class StackOverlayPanelController {
     private func preferredInitialDockPositionAndSide(for anchorFrame: CGRect)
         -> (StackOverlayDockPosition, StackOverlayHorizontalSide)
     {
-        guard let screen = referenceScreen(for: anchorFrame) else {
-            return (.top, .left)
-        }
-
-        let visible = screen.visibleFrame
-
-        let topAvailable = visible.maxY - anchorFrame.maxY
-        let leftAvailable = anchorFrame.minX - visible.minX
-
-        let isTallWindow = anchorFrame.height > visible.height * 0.82
-
-        // 1. Strongly prefer top-left when there's decent room on top
-        if topAvailable >= 36 {
-            return (.top, .left)
-        }
-
-        // 2. Prefer left rail for tall windows or when left has good space
-        if isTallWindow || leftAvailable >= 36 {
-            return (.left, .left)
-        }
-
-        // 3. Fall back to normal best-available-space logic (will be resolved in syncVisibility)
-        return (.top, .left)
+        return WindowAttachmentEngine.preferredInitialDockPositionAndSide(for: anchorFrame)
     }
 
     private func clampedOrigin(proposedOrigin: CGPoint, preferredScreen: NSScreen?) -> CGPoint {

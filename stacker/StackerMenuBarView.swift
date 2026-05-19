@@ -360,8 +360,8 @@ struct StackerMenuBarLabel: View {
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
         } icon: {
             Image(nsImage: menuBarIcon)
-                .renderingMode(.template)
-                .foregroundStyle(degradedCount > 0 ? Color.orange : Color.primary)
+                // Full color app icon (no template) so the real Stacker icon appears in the menu bar
+                // .renderingMode(.template) removed because it was making the icon invisible/monochrome in many cases
         }
         .labelStyle(.titleAndIcon)
     }

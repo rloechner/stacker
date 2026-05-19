@@ -15,6 +15,7 @@ struct ContentView: View {
     private let sidebarSnapshotBuilder = SidebarSnapshotBuilder()
     @State private var eventCoordinator = StackerEventCoordinator()
     @State private var combineOverlayController = CombineOverlayPanelController()
+    @State private var refreshTimer: Timer?
 
     init(presentation: StackerPresentation = .window) {
         self.presentation = presentation
@@ -547,6 +548,8 @@ struct ContentView: View {
         ) { [self] _ in
             self.stopAllActiveStacksOnQuit()
         }
+
+        startRefreshTimerIfNeeded()
     }
 
     private func handleDisappear() {
@@ -554,6 +557,26 @@ struct ContentView: View {
         stopTrackingActiveApplications()
         stopTrackingSystemWake()
         stopSidebarObservers()
+        stopRefreshTimer()
+    }
+
+    private func startRefreshTimerIfNeeded() {
+        stopRefreshTimer()
+        // Only auto-refresh the admin when it's the main window and a browser is selected
+        guard presentation == .window, targetPID != nil else { return }
+
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.8, repeats: true) { _ in
+            Task { @MainActor in
+                if targetPID != nil {
+                    await loadFrontmostAppWindows()
+                }
+            }
+        }
+    }
+
+    private func stopRefreshTimer() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
     }
 
     @MainActor
@@ -1427,7 +1450,7 @@ struct ContentView: View {
             appBundleIdentifier: session.app.bundleIdentifier,
             appName: session.app.name,
             style: .addBack(
-                title: fallbackWindow.title
+                titles: session.availableWindowChoices.map(\.title).prefix(5).map { $0 }
             ),
             frameProvider: { [session] in
                 guard let focusedWindow = StackOverlayTargeting.focusedAddBackWindow(in: session) else { return nil }

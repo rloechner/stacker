@@ -406,4 +406,28 @@ struct WindowAttachmentEngine {
         )
         return (origin, origin != proposedOrigin)
     }
+
+    /// Preferred initial position for a brand new stack.
+    /// Strongly prefers top-left, falling back to left-top for tall windows,
+    /// before using general "most space" logic.
+    static func preferredInitialDockPositionAndSide(for anchorFrame: CGRect)
+        -> (dock: StackOverlayDockPosition, side: StackOverlayHorizontalSide)
+    {
+        guard let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(anchorFrame) }) ?? NSScreen.main else {
+            return (.top, .left)
+        }
+
+        let visible = screen.visibleFrame
+        let topAvailable = visible.maxY - anchorFrame.maxY
+        let leftAvailable = anchorFrame.minX - visible.minX
+        let isTallWindow = anchorFrame.height > visible.height * 0.82
+
+        if topAvailable >= 36 {
+            return (.top, .left)
+        }
+        if isTallWindow || leftAvailable >= 36 {
+            return (.left, .left)
+        }
+        return (.top, .left)
+    }
 }
