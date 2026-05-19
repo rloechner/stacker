@@ -537,6 +537,16 @@ struct ContentView: View {
         startCombineOverlay()
         refreshAccessibilityState()
         showAccessibilityAlert = false
+
+        // Clean up all AX observers and window controllers on quit so we don't destabilize
+        // target apps (Chrome, Safari, etc.) when the user quits Stacker.
+        NotificationCenter.default.addObserver(
+            forName: .stackerAppWillTerminate,
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            self.stopAllActiveStacksOnQuit()
+        }
     }
 
     private func handleDisappear() {
@@ -1485,8 +1495,7 @@ struct ContentView: View {
         if let error = outcome.errorMessage {
             let isTransient = WindowDiscoveryService.isTransientDiscoveryErrorForMessage(error)
 
-            if let existingSession = activeStackSessions.first(where: { $0.app.processIdentifier == targetApplication.processIdentifier }),
-               isTransient {
+            if isTransient && activeStackSessions.contains(where: { $0.app.processIdentifier == targetApplication.processIdentifier }) {
                 markStackDegraded(for: targetApplication.processIdentifier, reason: error)
             } else {
                 errorMessage = error
@@ -1507,6 +1516,17 @@ struct ContentView: View {
         postActiveStackCount()
         postSidebarSnapshot()
         syncCombineOverlay()
+    }
+
+    /// Called on app termination to cleanly stop all AX observers and window syncing.
+    /// This prevents Chrome / Safari from showing "unexpectedly quit" when Stacker closes.
+    private func stopAllActiveStacksOnQuit() {
+        // We iterate over a snapshot because we're about to tear everything down.
+        let sessions = sessionStore.activeStackSessions
+        for session in sessions {
+            session.controller.stopGrouping()
+            session.overlayController.close()
+        }
     }
 }
 

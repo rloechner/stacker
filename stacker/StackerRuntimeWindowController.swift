@@ -49,4 +49,11 @@ final class StackerAppDelegate: NSObject, NSApplicationDelegate {
             runtimeWindowController.startIfNeeded()
         }
     }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Important: Tell everything to stop observing windows and release AXObservers.
+        // This prevents target apps (especially Chrome) from crashing with "unexpectedly quit"
+        // when Stacker is closed while it has active stacks.
+        NotificationCenter.default.post(name: .stackerAppWillTerminate, object: nil)
+    }
 }

@@ -332,10 +332,17 @@ struct StackerMenuBarLabel: View {
     let degradedCount: Int
 
     private var menuBarIcon: NSImage {
-        // Use the real Stacker app icon (from Assets.xcassets/AppIcon) scaled for the menu bar.
-        // Falls back to a generic stack symbol only if the app icon isn't available yet.
-        let baseIcon = NSApp.applicationIconImage
-            ?? NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "Stacker")!
+        // More reliable way to get the app icon, especially when launching from Xcode (Debug).
+        // NSImage(named:) looks in the asset catalog and works better during early launch / Debug builds.
+        let baseIcon: NSImage
+
+        if let namedIcon = NSImage(named: "AppIcon") {
+            baseIcon = namedIcon
+        } else if let appIcon = NSApp.applicationIconImage {
+            baseIcon = appIcon
+        } else {
+            baseIcon = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "Stacker")!
+        }
 
         let targetSize = NSSize(width: 18, height: 18)
         let resized = NSImage(size: targetSize)

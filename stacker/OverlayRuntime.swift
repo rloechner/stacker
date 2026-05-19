@@ -3359,8 +3359,56 @@ final class StackOverlayPanelController {
             bundleIdentifier: appBundleIdentifier,
             appName: appName
         )
+
+        // Reset always tries to put the widget in the most user-friendly default first:
+        // 1. Top-left (top rail, left content)
+        // 2. Left-top (left rail) for tall windows
+        //
+        // Only falls back to "best available space" if the preferred sides have very little room.
+        // This overrides any previous drag offset or explicit edge the user chose for *this* widget.
+        if let anchor = currentAnchorFrameForLayout() {
+            let (preferredDock, preferredSide) = preferredInitialDockPositionAndSide(for: anchor)
+            dockPosition = preferredDock
+            horizontalSide = preferredSide
+        }
+
         onResetPositionRequested()
         syncVisibility()
+    }
+
+    /// Returns the user's desired reset/initial position.
+    /// Priority order (most user-friendly):
+    /// 1. Top rail + left content (top-left) — whenever there's reasonable room on top
+    /// 2. Left rail — for tall windows or when left side has decent space
+    ///
+    /// Only falls back to general "most available space" if the preferred sides
+    /// are genuinely constrained.
+    private func preferredInitialDockPositionAndSide(for anchorFrame: CGRect)
+        -> (StackOverlayDockPosition, StackOverlayHorizontalSide)
+    {
+        guard let screen = referenceScreen(for: anchorFrame) else {
+            return (.top, .left)
+        }
+
+        let visible = screen.visibleFrame
+
+        let topAvailable = visible.maxY - anchorFrame.maxY
+        let leftAvailable = anchorFrame.minX - visible.minX
+
+        let isTallWindow = anchorFrame.height > visible.height * 0.82
+
+        // 1. Strongly prefer top-left when there's decent room on top
+        if topAvailable >= 36 {
+            return (.top, .left)
+        }
+
+        // 2. Prefer left rail for tall windows or when left has good space
+        if isTallWindow || leftAvailable >= 36 {
+            return (.left, .left)
+        }
+
+        // 3. Fall back to normal best-available-space logic (will be resolved in syncVisibility)
+        return (.top, .left)
     }
 
     private func clampedOrigin(proposedOrigin: CGPoint, preferredScreen: NSScreen?) -> CGPoint {
