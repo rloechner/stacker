@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var eventCoordinator = StackerEventCoordinator()
     @State private var combineOverlayController = CombineOverlayPanelController()
     @State private var refreshTimer: Timer?
+    @State private var eligibleRefreshWorkItem: DispatchWorkItem?
 
     init(presentation: StackerPresentation = .window) {
         self.presentation = presentation
@@ -127,7 +128,9 @@ struct ContentView: View {
         contentBody
             .padding()
             .frame(minWidth: presentation == .popover ? 320 : 420, maxWidth: .infinity, alignment: .leading)
-            .onAppear(perform: handleAppear)
+            .onAppear {
+                handleAppear()
+            }
             .onChange(of: selectedTargetPID) { _, newValue in
                 guard let newValue else { return }
                 prepareForTargetSwitch(to: newValue)
@@ -168,7 +171,27 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .stackerOverlayPlacementDidChange)) { _ in
                 applyCurrentWidgetPlacement()
             }
-            .onDisappear(perform: handleDisappear)
+            .onDisappear {
+                handleDisappear()
+            }
+
+            // Auto-refresh eligible browsers list when apps launch or terminate.
+            // This makes the sidebar update live when the user opens a new supported browser.
+            .onReceive(NotificationCenter.default.publisher(for: NSWorkspace.didLaunchApplicationNotification)) { notification in
+                debounceLoadEligibleApplications()
+
+                // Auto-select newly launched eligible browser so its windows appear immediately
+                if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                   workspaceController.isEligibleTargetApp(app) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                        selectedTargetPID = app.processIdentifier
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWorkspace.didTerminateApplicationNotification)) { _ in
+                debounceLoadEligibleApplications()
+            }
+
             .alert(isPresented: Binding(
                 get: { showAccessibilityAlert },
                 set: { showAccessibilityAlert = $0 }
@@ -558,12 +581,21 @@ struct ContentView: View {
         stopTrackingSystemWake()
         stopSidebarObservers()
         stopRefreshTimer()
+
+        eligibleRefreshWorkItem?.cancel()
+        eligibleRefreshWorkItem = nil
     }
 
     private func startRefreshTimerIfNeeded() {
         stopRefreshTimer()
         // Only auto-refresh the admin when it's the main window and a browser is selected
         guard presentation == .window, targetPID != nil else { return }
+
+        // Do an immediate refresh when the admin window becomes key
+        Task { @MainActor in
+            await loadEligibleApplications()
+            await loadFrontmostAppWindows()
+        }
 
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.8, repeats: true) { _ in
             Task { @MainActor in
@@ -577,6 +609,17 @@ struct ContentView: View {
     private func stopRefreshTimer() {
         refreshTimer?.invalidate()
         refreshTimer = nil
+    }
+
+    private func debounceLoadEligibleApplications(delay: TimeInterval = 0.6) {
+        eligibleRefreshWorkItem?.cancel()
+        let workItem = DispatchWorkItem {
+            Task { @MainActor in
+                await loadEligibleApplications()
+            }
+        }
+        eligibleRefreshWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 
     @MainActor
@@ -1176,12 +1219,13 @@ struct ContentView: View {
         eventCoordinator.startSidebarObservers(
             handlers: StackerSidebarEventHandlers(
                 onSelectTargetApplication: { pid in
-                    if selectedTargetPID == pid {
-                        Task { @MainActor in
-                            await loadFrontmostAppWindows()
-                        }
-                    }
                     selectedTargetPID = pid
+
+                    // Primary click = open in Stacker admin (manage the stack here).
+                    // A separate button in the sidebar brings the real browser forward.
+                    Task { @MainActor in
+                        await loadFrontmostAppWindows()
+                    }
                 },
                 onAutoStackApplication: { pid in
                     pendingAutoStackPID = pid
@@ -1440,7 +1484,7 @@ struct ContentView: View {
     }
 
     private func showAddBackOverlay(for session: ActiveStackSession) {
-        guard let fallbackWindow = session.availableWindowChoices.first else {
+        guard !session.availableWindowChoices.isEmpty else {
             combineOverlayController.clear()
             return
         }

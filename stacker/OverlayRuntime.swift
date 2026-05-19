@@ -2869,8 +2869,12 @@ final class StackOverlayPanelController {
         dragStartOrigin = nil
         previousBackgroundDragDelta = .zero
         isDraggingBackground = false
+
+        // Record where the user dropped the widget (using the classic centered reference).
         captureUserAnchorOffset()
-        syncVisibility()
+
+        // No special suppression needed anymore — the classic offset model
+        // + the isDraggingBackground guard is sufficient for smooth drag & drop.
     }
 
     private func handleBackgroundDrop(_ payload: String) -> Bool {
@@ -2896,6 +2900,10 @@ final class StackOverlayPanelController {
     }
 
     private func syncVisibility() {
+        if isDraggingBackground {
+            return
+        }
+
         guard !items.isEmpty else {
             updateHealth(.missingAnchor)
             controlsPanel.orderOut(nil)
@@ -3036,15 +3044,15 @@ final class StackOverlayPanelController {
     }
 
     private func currentAnchorFrameForLayout() -> CGRect? {
-        if let lastAnchorFrame {
-            return lastAnchorFrame
+        // Always prefer fresh data from the provider so the widget stays attached
+        // during live resize/move of the anchor window (especially important for Firefox).
+        if let state = attachmentStateProvider?(),
+           let anchorFrame = state.anchorFrame {
+            return attachmentEngine.convertAXFrameToScreenCoordinates(anchorFrame)
         }
 
-        guard let state = attachmentStateProvider?(),
-              let anchorFrame = state.anchorFrame else {
-            return nil
-        }
-        return attachmentEngine.convertAXFrameToScreenCoordinates(anchorFrame)
+        // Fallback to last known value only if the provider can't give us anything right now.
+        return lastAnchorFrame
     }
 
     private func resizePanelsToFitContent() {
@@ -3315,6 +3323,8 @@ final class StackOverlayPanelController {
         guard !isUpdatingPosition else { return }
         let resolvedAttachment = resolveCurrentAttachment()
         guard let anchorFrame = resolvedAttachment.anchorFrame else { return }
+
+        // Normal path
         let clampedOrigin = clampedOrigin(
             proposedOrigin: panel.frame.origin,
             preferredScreen: referenceScreen(for: anchorFrame)
@@ -3324,6 +3334,9 @@ final class StackOverlayPanelController {
             panel.setFrameOrigin(clampedOrigin)
             isUpdatingPosition = false
         }
+
+        // Reverted to previous working model (offset from center/reference point)
+        // so that drag-and-drop feels correct again.
         switch dockPosition {
         case .top, .bottom:
             let anchoredX = anchorFrame.midX - panel.frame.width / 2

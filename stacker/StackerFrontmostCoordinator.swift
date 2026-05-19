@@ -28,6 +28,8 @@ final class StackerFrontmostCoordinator {
         guard let app, workspaceController.isEligibleTargetApp(app) else { return }
         let appPID = app.processIdentifier
 
+        // Always refresh the window list for the current frontmost eligible browser.
+        // This gives the user a live view in the admin without ever clicking Refresh.
         Task { @MainActor in
             await loadEligibleApplications()
 
@@ -38,14 +40,21 @@ final class StackerFrontmostCoordinator {
                 }
             }
 
-            guard selectedTargetPID == nil else { return }
-
+            // When an eligible browser becomes frontmost, auto-select it in the admin
+            // so the window list refreshes automatically (user request).
             if let matchingApp = eligibleApplicationsProvider().first(where: { $0.processIdentifier == appPID }) {
                 setSelectedTargetPID(matchingApp.processIdentifier)
                 setTargetApplication(matchingApp)
                 setAppName(matchingApp.name)
                 setTargetPID(matchingApp.processIdentifier)
                 syncCurrentStackState()
+
+                // Explicitly refresh the window list for the newly frontmost browser
+                // so the admin always shows current windows without the user clicking Refresh.
+                Task { @MainActor in
+                    await loadEligibleApplications()
+                    // loadFrontmostAppWindows will be triggered via onChange(selectedTargetPID)
+                }
             } else if groupedTitles.isEmpty && !isSelectingWindows {
                 setTargetApplication(nil)
                 setAppName(nil)

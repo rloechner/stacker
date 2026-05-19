@@ -78,11 +78,11 @@ struct MainWindowView: View {
     var body: some View {
         NavigationSplitView {
             sidebar
-                .navigationSplitViewColumnWidth(min: 240, ideal: 270, max: 320)
+                .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
         } detail: {
             detailPane
         }
-        .frame(minWidth: 900, minHeight: 620)
+        .frame(minWidth: 560, minHeight: 420)   // Tight utility size
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
@@ -100,7 +100,7 @@ struct MainWindowView: View {
         .onChange(of: expandedPID) { _, newValue in
             guard newValue != settingsSelectionID else { return }
             guard let newValue, let app = apps.first(where: { $0.pid == newValue }) else { return }
-            MainWindowViewActions.selectApplication(app.pid, focusStack: app.isActive)
+            MainWindowViewActions.selectApplication(app.pid, focusStack: false)
         }
         .onReceive(NotificationCenter.default.publisher(for: .stackerSidebarSnapshotDidChange)) { notification in
             guard let snapshot = notification.object as? SidebarSnapshot else { return }
@@ -197,30 +197,43 @@ private extension MainWindowView {
     }
 
     private func sidebarRow(for app: AppSnapshot) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 6) {
             Image(systemName: app.isActive ? "circle.fill" : "circle")
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 7, weight: .semibold))
                 .foregroundStyle(app.statusTint)
-                .frame(width: 16)
+                .frame(width: 12)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(app.name)
-                    .lineLimit(1)
+            Text(app.name)
+                .font(.callout)
+                .lineLimit(1)
 
-                Text(sidebarDetail(for: app))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
+            Spacer(minLength: 2)
 
             if app.widgetHidden {
                 Image(systemName: "eye.slash")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .help("Widget hidden")
             }
+
+            // Only the arrow brings the real browser app to the front.
+            // Clicking the row itself only opens it inside the Stacker admin.
+            if app.isActive {
+                Button {
+                    if let runningApp = NSRunningApplication(processIdentifier: app.pid) {
+                        runningApp.activate(options: [])
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.forward")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Bring this browser to the front")
+            }
         }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
         .contextMenu {
             Button(app.isActive ? "Focus Switcher" : "Turn On Switcher") {
                 if app.isActive {
@@ -254,7 +267,7 @@ private extension MainWindowView {
         } else {
             ScrollView {
                 if let selectedApp {
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 10) {
                         detailHeader(for: selectedApp)
 
                         if selectedPID != selectedApp.pid {
@@ -267,8 +280,8 @@ private extension MainWindowView {
                             availableWindowsSection(for: selectedApp)
                         }
                     }
-                    .padding(20)
-                    .frame(maxWidth: 760, alignment: .leading)
+                    .padding(12)
+                    .frame(maxWidth: 720, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 } else {
                     ContentUnavailableView(
@@ -276,7 +289,7 @@ private extension MainWindowView {
                         systemImage: "person.2.crop.square.stack",
                         description: Text("Open two or more windows in Chrome, Brave, Safari, Edge, or Firefox, then refresh Stacker.")
                     )
-                    .frame(maxWidth: .infinity, minHeight: 420)
+                    .frame(maxWidth: .infinity, minHeight: 320)
                 }
             }
             .navigationTitle(selectedApp?.name ?? "Window Switcher")
@@ -284,12 +297,12 @@ private extension MainWindowView {
     }
 
     private func detailHeader(for app: AppSnapshot) -> some View {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .center, spacing: 10) {
             Image(systemName: app.isActive ? "rectangle.3.group.bubble.left.fill" : "rectangle.3.group")
-                .font(.system(size: 34, weight: .regular))
+                .font(.system(size: 20, weight: .regular))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(app.statusTint)
-                .frame(width: 44, height: 44)
+                .frame(width: 26, height: 26)
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
@@ -374,36 +387,39 @@ private extension MainWindowView {
     }
 
     private func linkedWindowsSection(for app: AppSnapshot) -> some View {
-        GroupBox {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("IN STACK")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+                .padding(.top, 4)
+
             if selectedActiveWindows.isEmpty {
-                emptySectionText("No linked browser windows are loaded right now.")
+                emptySectionText("No windows in this stack.")
             } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(selectedActiveWindows.enumerated()), id: \.element.id) { index, window in
-                        if index > 0 { Divider() }
-                        linkedWindowRow(window, index: index, pid: app.pid)
-                    }
+                ForEach(Array(selectedActiveWindows.enumerated()), id: \.element.id) { index, window in
+                    linkedWindowRow(window, index: index, pid: app.pid)
                 }
             }
-        } label: {
-            Label("Linked Browser Windows", systemImage: "rectangle.connected.to.line.below")
         }
     }
 
     private func availableWindowsSection(for app: AppSnapshot) -> some View {
-        GroupBox {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("OTHER OPEN WINDOWS")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+                .padding(.top, 6)
+
             if selectedInactiveWindows.isEmpty {
                 emptySectionText(availableWindowsEmptyText(for: app))
             } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(selectedInactiveWindows.enumerated()), id: \.element.id) { index, window in
-                        if index > 0 { Divider() }
-                        availableWindowRow(window, app: app)
-                    }
+                ForEach(Array(selectedInactiveWindows.enumerated()), id: \.element.id) { index, window in
+                    if index > 0 { Divider() }
+                    availableWindowRow(window, app: app)
                 }
             }
-        } label: {
-            Label(app.isActive ? "Available Browser Windows" : "Ready To Link", systemImage: "square.stack.3d.up")
         }
     }
 
