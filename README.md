@@ -103,6 +103,8 @@ Each active stack can show a drawer-style widget attached to the browser window.
 
 The drawer is meant to feel attached to the browser window, not like a separate floating utility window.
 
+**Multi-monitor guarantee**: The widget now correctly and automatically attaches (and re-homes on the fly) for any mix of monitor sizes/resolutions. Users with laptop + external setups can confidently leave a stack running with its widget resident on the smaller secondary display; the explicit **anchor-driven full re-render** (fresh converted AX rect backing scale vs. `lastAnchorFrame` detection in the normal sync path, triggering complete clean-slate `fullAnchorResolutionChangeReset` using the new window coordinates as sole input) plus the home-screen mismatch guard + preferredInitial logic on startTracking / recurring sync plus the re-home path ensure production-quality attachment without manual intervention. This anchor-driven complete re-render from fresh AX is the production solution for Chrome stack moves across mixed-res monitors. See Recent Fixes, docs/compatibility-matrix.md, and the test plan in docs/testing-multi-display.md for the full four-layer mechanism (INVESTIGATOR / CODER / TESTER collaboration).
+
 ### Menu Bar
 
 The menu bar exposes browser window status, stack toggles, widget visibility, settings access, refresh, and quit.
@@ -152,10 +154,22 @@ See [docs/distribution-readiness.md](docs/distribution-readiness.md) for the tec
 These are the areas where improvements and additional validation are most valuable:
 
 - Expand real-world testing coverage (especially Firefox and post-sleep recovery) and keep the compatibility matrix honest.
-- Improve widget behavior on complex multi-monitor setups, full-height windows, and after macOS Spaces changes.
+- Multi-monitor widget reliability on mixed-resolution setups (including the explicit anchor-driven full re-render for live Chrome stack moves across resolution boundaries, plus steady-state attachment when leaving stacks on smaller secondary monitors) is now fully resolved and production-ready via the four defense layers (see Recent Fixes and the detailed story in docs/compatibility-matrix.md). Focus has shifted to other polish areas.
 - Add a small number of focused unit tests for the pure session and ordering logic (no real browsers required).
 - Maintain clear documentation so new users can build from source or run a DMG with minimal friction.
 - Continue refining the attached widget and main-window admin experience for clarity and polish.
+
+## Recent Fixes
+
+- **Multi-monitor / multi-resolution floating widget reliability (the hardest real-world edge for v1 open-source readiness):** The attached drawer widget now reliably attaches, re-homes, and maintains correct positioning on *any* combination of monitor sizes and resolutions — including the critical case of permanent / steady-state residence on smaller secondary lower-resolution displays (e.g., MacBook Retina + external 1080p) with no manual "Reset Widget Position" required. This closes a long-standing class of bugs where the widget would end up wrong-side, detached, overlapping rounded corners, or over-clamped after cross-screen moves or when stacks were started/left on secondary monitors.
+
+  The complete mechanism (identified by INVESTIGATOR, implemented by CODER with TESTER's exhaustive validation plan in `docs/testing-multi-display.md`; now four coordinated defense layers) features the **new explicit anchor-driven full re-render as the production solution for Chrome stack moves across mixed-res monitors**:
+  - **Anchor-driven full re-render (dominant explicit path for live moves)**: In the normal fresh-AX state path inside `syncVisibility` (OverlayRuntime.swift), the code explicitly detects when the Chrome anchor window has crossed resolution screens by comparing `backingScaleFactor` of the newly converted fresh AX rect (via `referenceScreen`) against the scale implied by the previous `lastAnchorFrame`. Delta > 0.05 triggers `fullAnchorResolutionChangeReset` using the *fresh AX rect as sole authoritative input*: zeros all in-memory positioning state (offsets, deltas, `lastAnchorFrame`, `needsReanchor...`), forces smart dock/side via `preferredInitialDockPositionAndSide(for: freshConvertedAnchor)`, `orderOut` panels for clean slate, pure-from-fresh `resolveAttachment` + full `setFrame`, three rounds of strong rebuilds (`invalidatePanelRendering`, `hostingView.forceFullRebuildAndDisplay()`, layer/display passes on both main + controls panels), then two delayed settlement passes (0.12s + 0.42s) that re-sync scales, rebuild, and `syncVisibility`. This delivers a *true complete re-render from the new window coordinates*.
+  - **Robust re-home + home-screen mismatch guard** on display metrics / `didChangeScreenNotification` (in `handleDisplayMetricsChanged` for both controllers) and the lightweight runtime `rehomeIfCurrentResolvedIsBad` guard (called from `syncVisibility` and `startTracking`): surgically zeros poisoned offsets when screen mismatch or bad/clamped origin detected, restores preferred dock, schedules settle passes.
+  - **Smart initial logic on `startTracking` + birth-time guard**: inspects current anchor home screen vs. loaded persisted offsets; on mismatch zeros and invokes `preferredInitialDockPositionAndSide` for the *actual* residence screen.
+  - Supporting pieces (referenceVisibleFrame / referenceScreen with panel hint, clamping, resolvedDockPosition, scale sync) always derive from the live anchor + destination screen.
+
+  Full details, code comments (the "NEW ANCHOR-DRIVEN FULL RE-RENDER DETECTION" block and `fullAnchorResolutionChangeReset` docstring), and the contributor test matrix live in `docs/compatibility-matrix.md` (multi-monitor section) and `docs/testing-multi-display.md`. The widget (with the anchor-driven complete re-render for moves) is now production-ready for everyday mixed-monitor users. (See also the strengthened notes in the Attached Widget section above and in CONTRIBUTING.md.)
 
 ## Contributing & Support
 

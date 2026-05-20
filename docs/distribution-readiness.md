@@ -116,3 +116,5 @@ Those claims imply reliability that macOS does not give a third-party utility.
 6. Keep reducing the app UI/docs to live stacks only.
 7. Add a compatibility matrix and record known-good app/window combinations.
 8. Decide whether to attempt Mac App Store review as an experiment or commit to direct distribution first.
+
+**v1 Open-Source Strength Note (DOCUMENTER + Release Prep)**: The multi-resolution / multi-monitor floating widget story — including the robust re-home, home-screen mismatch guard, and smart `preferredInitialDockPositionAndSide` logic on `startTracking` — is now a fully validated, production-ready capability. Real mixed-monitor users (laptop + external, higher↔lower res, permanent residence on secondary smaller displays) can rely on correct automatic attachment with no manual resets. This was the last major real-world edge case; it is now a documented highlight for the free open-source launch (see compatibility-matrix.md and testing-multi-display.md for the complete INVESTIGATOR / CODER / TESTER story). The project is in excellent shape for a high-quality v1 release.

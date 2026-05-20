@@ -59,7 +59,8 @@ final class StackRuntimeCoordinator {
         var initialDockPosition = existingSession?.overlayDockPosition ?? .top
         if existingSession == nil, let firstWindow = windows.first {
             if let axWindow = firstWindow.window {
-                let frame = CGRect(origin: axWindow.position ?? .zero, size: axWindow.size ?? .zero)
+                let rawFrame = CGRect(origin: axWindow.position ?? .zero, size: axWindow.size ?? .zero)
+                let frame = WindowAttachmentEngine().convertAXFrameToScreenCoordinates(rawFrame)
                 let (prefDock, _) = WindowAttachmentEngine.preferredInitialDockPositionAndSide(for: frame)
                 initialDockPosition = prefDock
             }

@@ -356,6 +356,40 @@ private struct CombineOverlayView: View {
     }
 }
 
+// Backing scale sync helpers to ensure crisp rendering of overlay widgets
+// when the panel (or its hosting window) moves across displays with different
+// backingScaleFactor (e.g. Retina 2x <-> non-Retina 1x). Without this,
+// CALayer/SwiftUI content retains stale scale causing blur/pixelation.
+private func syncBackingScale(for window: NSWindow) {
+    guard let contentView = window.contentView else { return }
+    syncBackingScale(in: contentView)
+}
+
+private func syncBackingScale(in view: NSView) {
+    if let w = view.window {
+        let scale = w.backingScaleFactor
+        applyContentsScale(scale, to: view.layer)
+        // Propagate to immediate superview (common for container + hosting setups)
+        if let sv = view.superview, let sl = sv.layer {
+            if sl.contentsScale != scale {
+                sl.contentsScale = scale
+            }
+            sl.sublayers?.forEach { $0.contentsScale = scale }
+            sl.setNeedsDisplay()
+        }
+    }
+    view.subviews.forEach { syncBackingScale(in: $0) }
+}
+
+private func applyContentsScale(_ scale: CGFloat, to layer: CALayer?) {
+    guard let layer = layer else { return }
+    if layer.contentsScale != scale {
+        layer.contentsScale = scale
+    }
+    layer.sublayers?.forEach { applyContentsScale(scale, to: $0) }
+    layer.setNeedsDisplay()
+}
+
 private final class TransparentHostingView<Content: View>: NSHostingView<Content> {
     var onSecondaryClick: (() -> Void)?
 
@@ -386,6 +420,12 @@ private final class TransparentHostingView<Content: View>: NSHostingView<Content
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         configureTransparency()
+        syncBackingScaleIfNeeded()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        syncBackingScaleIfNeeded()
     }
 
     override func layout() {
@@ -423,6 +463,49 @@ private final class TransparentHostingView<Content: View>: NSHostingView<Content
         superview?.layer?.isOpaque = false
         superview?.layer?.backgroundColor = NSColor.clear.cgColor
     }
+
+    private func syncBackingScaleIfNeeded() {
+        // Uses shared helper; also ensures layer exists for scale
+        wantsLayer = true
+        if let w = self.window {
+            let scale = w.backingScaleFactor
+            if let l = self.layer {
+                if l.contentsScale != scale { l.contentsScale = scale }
+                l.sublayers?.forEach { $0.contentsScale = scale }
+                l.setNeedsDisplay()
+            }
+            if let sv = self.superview, let sl = sv.layer {
+                if sl.contentsScale != scale { sl.contentsScale = scale }
+                sl.sublayers?.forEach { $0.contentsScale = scale }
+                sl.setNeedsDisplay()
+            }
+        }
+        // Delegate to shared recursion for subviews/sublayers (SwiftUI may spawn more)
+        if let w = self.window {
+            syncBackingScale(for: w)
+        } else {
+            syncBackingScale(in: self)
+        }
+    }
+
+    /// Strong refresh helper for complete re-render cycles (used by anchor-resolution-change
+    /// full reset). Self-assigning rootView + layout/display/layer forces the SwiftUI hosting
+    /// view and its content tree to rebuild from the authoritative fresh anchor rect + new
+    /// destination screen geometry, without relying on incremental updates or stale state.
+    func forceFullRebuildAndDisplay() {
+        rootView = rootView
+        invalidateIntrinsicContentSize()
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+        needsDisplay = true
+        displayIfNeeded()
+        if let l = layer {
+            l.setNeedsDisplay()
+        }
+        if let w = window {
+            w.invalidateShadow()
+        }
+    }
 }
 
 private final class TransparentContainerView: NSView {
@@ -441,6 +524,12 @@ private final class TransparentContainerView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         configureTransparency()
+        syncBackingScaleIfNeeded()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        syncBackingScaleIfNeeded()
     }
 
     override func layout() {
@@ -466,6 +555,30 @@ private final class TransparentContainerView: NSView {
         wantsLayer = true
         layer?.isOpaque = false
         layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    private func syncBackingScaleIfNeeded() {
+        // Uses shared helper; also ensures layer exists for scale
+        wantsLayer = true
+        if let w = self.window {
+            let scale = w.backingScaleFactor
+            if let l = self.layer {
+                if l.contentsScale != scale { l.contentsScale = scale }
+                l.sublayers?.forEach { $0.contentsScale = scale }
+                l.setNeedsDisplay()
+            }
+            if let sv = self.superview, let sl = sv.layer {
+                if sl.contentsScale != scale { sl.contentsScale = scale }
+                sl.sublayers?.forEach { $0.contentsScale = scale }
+                sl.setNeedsDisplay()
+            }
+        }
+        // Delegate to shared recursion for subviews/sublayers
+        if let w = self.window {
+            syncBackingScale(for: w)
+        } else {
+            syncBackingScale(in: self)
+        }
     }
 }
 
@@ -2179,6 +2292,11 @@ final class StackOverlayPanelController {
     private var dragStartOrigin: CGPoint?
     private var previousBackgroundDragDelta: CGSize = .zero
     private var lastAnchorFrame: CGRect?
+    private var needsReanchorAfterScreenChange = false
+    private var needsFullResetAfterAnchorScreenChange = false
+    /// One-time guard so we only emit the diagnostic log once per controller lifetime even if
+    /// multiple resolve passes or startTracking detect a persisted-offset / screen-mismatch condition.
+    private var didRehomeDueToScreenMismatch = false
     private var movementFadeWorkItem: DispatchWorkItem?
     private(set) var currentHealth: StackOverlayHealth = .visible
     var onHealthChanged: ((StackOverlayHealth) -> Void)?
@@ -2386,11 +2504,26 @@ final class StackOverlayPanelController {
         installDisplayChangeObservers()
 
         installRootView()
+        syncLayerBackingScales()
     }
 
     func startTracking(_ attachmentStateProvider: @escaping () -> StackOverlayAttachmentState, selectedItemProvider: @escaping () -> UInt?) {
         self.attachmentStateProvider = attachmentStateProvider
         self.selectedItemProvider = selectedItemProvider
+
+        // On `startTracking` (first attach for a stack — whether newly created while the
+        // browser is already on a smaller/lower-res secondary monitor, or recreated from
+        // persisted session after the widget was left/settled there): perform the initial
+        // home validation + re-home if the just-loaded persisted offsets (or dock) would
+        // place the widget badly (clamped or wrong-screen) on the current anchor's screen.
+        // Uses the same guard helper so the smart `preferredInitial...` + zeroed in-mem
+        // offsets are applied before the first syncVisibility and before the 0.08s timer.
+        // Ensures delayed settle + scale sync still run; no change for single-monitor.
+        let initialState = attachmentStateProvider()
+        preparePanelLayout(for: initialState)
+        let initialResolved = resolveAttachment(for: initialState)
+        _ = rehomeIfCurrentResolvedIsBad(initialResolved, state: initialState)
+
         trackingTimer?.invalidate()
         trackingTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
             self?.syncSelectedItem()
@@ -2928,7 +3061,77 @@ final class StackOverlayPanelController {
         let state = attachmentStateProvider?() ?? .missingAnchor
         preparePanelLayout(for: state)
 
-        let resolvedAttachment = resolveAttachment(for: state)
+        // 1. Proactively detect if the window is currently moving, resizing, or changing screens.
+        if let rawAnchor = state.anchorFrame {
+            let freshAnchor = attachmentEngine.convertAXFrameToScreenCoordinates(rawAnchor)
+            
+            let hasMovedOrResized = lastAnchorFrame.map { last in
+                abs(last.origin.x - freshAnchor.origin.x) > 0.5 ||
+                abs(last.origin.y - freshAnchor.origin.y) > 0.5 ||
+                abs(last.width - freshAnchor.width) > 0.5 ||
+                abs(last.height - freshAnchor.height) > 0.5
+            } ?? false
+
+            let screenChanged = lastAnchorFrame.map { last in
+                referenceScreen(for: last) != referenceScreen(for: freshAnchor)
+            } ?? false
+
+            if hasMovedOrResized || screenChanged {
+                movementFadeWorkItem?.cancel()
+                viewModel.isWindowChanging = true
+                
+                // Hide panels immediately on move/resize/screen change
+                panel.orderOut(nil)
+                controlsPanel.orderOut(nil)
+                
+                if screenChanged {
+                    needsReanchorAfterScreenChange = true
+                    needsFullResetAfterAnchorScreenChange = true
+                }
+                
+                lastAnchorFrame = freshAnchor
+                
+                let workItem = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.viewModel.isWindowChanging = false
+                    self.handleWindowMovementStopped()
+                }
+                movementFadeWorkItem = workItem
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.20, execute: workItem)
+                
+                return
+            }
+        }
+
+        // 2. Keep panels hidden while the window is still changing.
+        if viewModel.isWindowChanging {
+            panel.orderOut(nil)
+            controlsPanel.orderOut(nil)
+            return
+        }
+
+        var resolvedAttachment = resolveAttachment(for: state)
+
+        // NEW ANCHOR-DRIVEN FULL RE-RENDER DETECTION (right in the fresh-state path,
+        // before the lightweight rehomeIfCurrentResolvedIsBad call).
+        // Compares the owning screen / backingScaleFactor of the *newly converted* fresh AX
+        // anchor rect (from the moved Chrome window) against the backing scale implied by
+        // the previous `lastAnchorFrame`. When the anchor window has crossed resolution screens,
+        // we take the aggressive fullAnchorResolutionChangeReset path instead:
+        // complete re-render from the new window coordinates as the sole authoritative input.
+        // This is now the dominant explicit mechanism for Chrome stack anchor moves across
+        // res-different monitors. Clear logging is emitted on trigger.
+        if let freshAnchor = resolvedAttachment.anchorFrame ?? state.anchorFrame.map(attachmentEngine.convertAXFrameToScreenCoordinates),
+           let last = lastAnchorFrame,
+           let oldScale = backingScale(forFrameInScreenSpace: last),
+           let newScale = backingScale(forFrameInScreenSpace: freshAnchor),
+           abs(oldScale - newScale) > 0.05 {
+            print("[Stacker] ANCHOR-RES-CROSS full re-render trigger for \(appName): anchor rect crossed from backingScale \(oldScale) to \(newScale) — performing fullAnchorResolutionChangeReset using fresh AX rect as sole input")
+            fullAnchorResolutionChangeReset(freshConvertedAnchor: freshAnchor, state: state)
+            return
+        }
+
+        resolvedAttachment = rehomeIfCurrentResolvedIsBad(resolvedAttachment, state: state)
         updateHealth(resolvedAttachment.health)
 
         guard let origin = resolvedAttachment.origin,
@@ -2948,6 +3151,29 @@ final class StackOverlayPanelController {
         syncControlsPanelVisibility()
         panel.orderFrontRegardless()
     }
+
+    private func handleWindowMovementStopped() {
+        guard let state = attachmentStateProvider?() else { return }
+        
+        if needsReanchorAfterScreenChange || needsFullResetAfterAnchorScreenChange {
+            needsFullResetAfterAnchorScreenChange = false
+            if let rawAnchor = state.anchorFrame {
+                let freshAnchor = attachmentEngine.convertAXFrameToScreenCoordinates(rawAnchor)
+                print("[Stacker] Window movement stopped after screen change. Rebuilding widget on new screen...")
+                fullAnchorResolutionChangeReset(freshConvertedAnchor: freshAnchor, state: state)
+            }
+        } else {
+            print("[Stacker] Window movement stopped. Re-attaching widget...")
+            
+            // Sync backing scales and redraw panels first
+            syncLayerBackingScales()
+            invalidatePanelRendering()
+            
+            // Re-sync visibility to place and show the panels
+            syncVisibility()
+        }
+    }
+
 
     private func resolveCurrentAttachment() -> StackOverlayResolvedAttachment {
         let state = attachmentStateProvider?() ?? .missingAnchor
@@ -2991,7 +3217,6 @@ final class StackOverlayPanelController {
 
     private func applyResolvedAttachment(_ attachment: StackOverlayResolvedAttachment, origin: CGPoint) {
         if let anchorFrame = attachment.anchorFrame {
-            updateAnchorMotion(anchorFrame)
             lastAnchorFrame = anchorFrame
         }
 
@@ -3023,24 +3248,7 @@ final class StackOverlayPanelController {
     }
 
     private func updateAnchorMotion(_ anchorFrame: CGRect) {
-        defer { lastAnchorFrame = anchorFrame }
-
-        guard let lastAnchorFrame else { return }
-        guard abs(lastAnchorFrame.origin.x - anchorFrame.origin.x) > 0.5 ||
-              abs(lastAnchorFrame.origin.y - anchorFrame.origin.y) > 0.5 ||
-              abs(lastAnchorFrame.width - anchorFrame.width) > 0.5 ||
-              abs(lastAnchorFrame.height - anchorFrame.height) > 0.5 else {
-            return
-        }
-
-        movementFadeWorkItem?.cancel()
-        viewModel.isWindowChanging = true
-
-        let workItem = DispatchWorkItem { [weak viewModel] in
-            viewModel?.isWindowChanging = false
-        }
-        movementFadeWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.20, execute: workItem)
+        // Obsolete: movement is now detected proactively at the start of syncVisibility
     }
 
     private func currentAnchorFrameForLayout() -> CGRect? {
@@ -3091,6 +3299,13 @@ final class StackOverlayPanelController {
         let handler: (Notification) -> Void = { [weak self] _ in
             self?.handleDisplayMetricsChanged()
         }
+        // Surgical: only trigger full re-anchor offset reset (to re-home via preferred/auto
+        // placement on the *new* screen's visibleFrame) when the panel actually changed screens.
+        // This avoids wiping in-memory user drag offsets on pure params/backing events.
+        let screenChangeHandler: (Notification) -> Void = { [weak self] _ in
+            self?.needsReanchorAfterScreenChange = true
+            self?.handleDisplayMetricsChanged()
+        }
 
         screenParametersObserver = notificationCenter.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -3102,7 +3317,7 @@ final class StackOverlayPanelController {
             forName: NSWindow.didChangeScreenNotification,
             object: panel,
             queue: .main,
-            using: handler
+            using: screenChangeHandler
         )
         panelBackingObserver = notificationCenter.addObserver(
             forName: NSWindow.didChangeBackingPropertiesNotification,
@@ -3114,7 +3329,7 @@ final class StackOverlayPanelController {
             forName: NSWindow.didChangeScreenNotification,
             object: controlsPanel,
             queue: .main,
-            using: handler
+            using: screenChangeHandler
         )
         controlsPanelBackingObserver = notificationCenter.addObserver(
             forName: NSWindow.didChangeBackingPropertiesNotification,
@@ -3125,15 +3340,87 @@ final class StackOverlayPanelController {
     }
 
     private func handleDisplayMetricsChanged() {
+        syncLayerBackingScales()
         lastAnchorFrame = nil
+
+        // On cross-resolution screen transitions (higher-res -> lower-res or vice-versa),
+        // the in-memory user drag offsets (pixel deltas relative to the *old* anchor
+        // and its screen's visibleFrame / AX maxY) + previous drag delta + lastAnchorFrame
+        // are stale/poisoned. This causes the widget to compute bogus origins via
+        // resolveAttachment / clampedOrigin / proposedOrigin (using verticalAnchorOffset
+        // etc.) and land orphaned in the global void instead of re-attaching.
+        // Only when a didChangeScreenNotification actually fired for our panel(s) do we
+        // reset to 0 so the *next* resolve + preferredDockPosition logic (in
+        // resolvedDockPosition + applyResolvedAttachment) + clamped can pick a sensible
+        // home on the *destination* screen's visibleFrame. Future drags will persist
+        // fresh offsets for the new context. Non-screen display events leave offsets alone.
+        if needsReanchorAfterScreenChange {
+            previousBackgroundDragDelta = .zero
+            horizontalAnchorOffset = 0
+            verticalAnchorOffset = 0
+            // Strengthen existing screen-change re-home (CODER final): invoke the *smart*
+            // geometry-aware preferredInitialDockPositionAndSide (exactly as explicit
+            // resetPosition / "Reset Widget Position" does) instead of blindly restoring the
+            // old preferredDockPosition (which was captured on the source screen and may pick
+            // a rail with insufficient space or wrong side on a smaller/lower-res destination
+            // monitor). This + the zeroed offsets lets the destination visibleFrame + resolved
+            // + clamped pick a reliable home even for "moved and left there" cases.
+            if let anchor = currentAnchorFrameForLayout() {
+                let (smartDock, smartSide) = preferredInitialDockPositionAndSide(for: anchor)
+                var didUpdate = false
+                if preferredDockPosition != smartDock {
+                    preferredDockPosition = smartDock
+                    didUpdate = true
+                }
+                if dockPosition != smartDock {
+                    dockPosition = smartDock
+                    didUpdate = true
+                }
+                if horizontalSide != smartSide {
+                    horizontalSide = smartSide
+                    didUpdate = true
+                }
+                if didUpdate {
+                    updateRootView()
+                }
+            }
+            needsReanchorAfterScreenChange = false
+        }
+
         resizePanelsToFitContent()
         invalidatePanelRendering()
         syncVisibility()
+
+        // Schedule 1-2 follow-ups to let AX reports + NSScreen.screens + panel backing
+        // fully settle after the move (the 0.08s trackingTimer may still see partial state).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            guard let self else { return }
+            self.syncLayerBackingScales()
+            self.invalidatePanelRendering()
+            self.syncVisibility()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self else { return }
+            self.syncLayerBackingScales()
+            self.invalidatePanelRendering()
+            self.syncVisibility()
+        }
     }
 
     private func invalidatePanelRendering() {
         invalidateOverlayRendering(for: panel)
         invalidateOverlayRendering(for: controlsPanel)
+    }
+
+    private func syncLayerBackingScales() {
+        // Ensure both main widget panel and controls drawer panel (plus their
+        // Transparent views + SwiftUI layers) have current backing scale.
+        syncBackingScale(for: panel)
+        syncBackingScale(for: controlsPanel)
+        syncBackingScale(in: containerView)
+        syncBackingScale(in: hostingView)
+        syncBackingScale(in: controlsContainerView)
+        syncBackingScale(in: controlsHostingView)
     }
 
     private func positionPanel(using frame: CGRect) {
@@ -3425,6 +3712,199 @@ final class StackOverlayPanelController {
         return WindowAttachmentEngine.preferredInitialDockPositionAndSide(for: anchorFrame)
     }
 
+    /// Lightweight "validate home screen" guard (CODER final round).
+    /// Called from syncVisibility (normal resolve path, right after fresh AX anchor conversion
+    /// inside resolveAttachment) and from startTracking (first attach).
+    /// Detects the steady-state failure mode (persisted offsets from a different-resolution
+    /// monitor, or dock chosen for source screen, cause the widget to compute a position that
+    /// lands on the wrong screen vs. the anchor's reference home, or requires clamping because
+    /// the delta no longer fits the destination visible area / anchor geometry).
+    /// When triggered: zero *in-memory* offsets for this resolve (and future until next drag),
+    /// force the smart initial dock+side for the *current* anchor's screen (like resetPosition),
+    /// log once, then re-resolve so the settle passes and scale syncs continue to work.
+    /// Only acts on real mismatch / bad-stale cases; leaves legitimate user drags and
+    /// single-monitor / same-res cases completely unchanged. Does not touch persisted store
+    /// (so original drag memory is kept for when user returns to that monitor).
+    private func rehomeIfCurrentResolvedIsBad(_ resolved: StackOverlayResolvedAttachment, state: StackOverlayAttachmentState) -> StackOverlayResolvedAttachment {
+        guard let anchor = resolved.anchorFrame ?? state.anchorFrame.map(attachmentEngine.convertAXFrameToScreenCoordinates) else {
+            return resolved
+        }
+
+        let homeScreen = referenceScreen(for: anchor)
+            ?? NSScreen.screens.first(where: { $0.visibleFrame.intersects(anchor) })
+            ?? NSScreen.main
+        let panelScreen = panel.screen
+        let isScreenMismatch = (panelScreen != nil && panelScreen != homeScreen)
+
+        let wasClamped = resolved.health == .clamped
+        // User-saved offset (small number) vs the magic default (-100_000) used for brand-new.
+        // Only re-home stale *persisted user* deltas that now produce bad (clamped or wrong-screen)
+        // placement; do not override the normal first-attach default behavior on single monitor.
+        let hasUserPersistedOffset = abs(horizontalAnchorOffset) < 99999 || abs(verticalAnchorOffset) > 0.5
+
+        if isScreenMismatch || (wasClamped && hasUserPersistedOffset) {
+            horizontalAnchorOffset = 0
+            verticalAnchorOffset = 0
+
+            let (smartDock, smartSide) = preferredInitialDockPositionAndSide(for: anchor)
+            var didUpdateView = false
+            if preferredDockPosition != smartDock {
+                preferredDockPosition = smartDock
+                didUpdateView = true
+            }
+            if dockPosition != smartDock {
+                dockPosition = smartDock
+                didUpdateView = true
+            }
+            if horizontalSide != smartSide {
+                horizontalSide = smartSide
+                didUpdateView = true
+            }
+            if didUpdateView {
+                updateRootView()
+            }
+
+            if !didRehomeDueToScreenMismatch {
+                // One-time (per controller) so Console/Xcode logs are not spammy.
+                print("[Stacker] re-homed due to screen mismatch for \(appName)")
+                didRehomeDueToScreenMismatch = true
+            }
+
+            // Re-resolve with the now-zeroed offsets + smart dock so the caller gets a good attachment.
+            return resolveAttachment(for: state)
+        }
+
+        return resolved
+    }
+
+    /// Aggressive full clean-slate re-render when the *AX anchor* (Chrome stack window)
+    /// has moved from one resolution screen to another (detected by comparing backingScaleFactor
+    /// of the newly converted fresh AX rect vs. the scale implied by the previous lastAnchorFrame).
+    /// This is the new dominant explicit path for cross-resolution anchor moves.
+    ///
+    /// It delivers a *true complete re-render from the new window coordinates* (fresh AX rect
+    /// is the sole authoritative input):
+    /// - Zeros *all* in-memory positioning state (offsets, deltas, lastAnchorFrame, flags).
+    /// - Forces dockPosition + horizontalSide from the geometry-aware preferredInitial... on the
+    ///   *fresh* anchor rect + its destination screen's visibleFrame.
+    /// - updateRootView + resizePanelsToFitContent.
+    /// - Temporarily orderOut both panels for clean slate.
+    /// - Re-resolves purely (no stale deltas) to compute origin from fresh anchor + new screen.
+    /// - Uses setFrame (full) + orderFront.
+    /// - Multiple rounds of invalidateOverlayRendering + layout + display + layer.setNeedsDisplay.
+    /// - Forces hosting views via dedicated forceFullRebuildAndDisplay (rootView self-assign + full refresh).
+    /// - Schedules 1-2 extra syncs at slightly longer delays for final settle.
+    ///
+    /// Persisted UserDefaults offsets are intentionally left alone (will be re-applied only on
+    /// future drags or when returning to the original monitor). This replaces lighter rehome/transition
+    /// logic for the anchor-cross-res case and ensures no leftover state from source screen.
+    private func fullAnchorResolutionChangeReset(freshConvertedAnchor: CGRect, state: StackOverlayAttachmentState) {
+        preparePanelLayout(for: state)
+
+        // Zero all in-memory positioning memory (clean slate; persisted store untouched)
+        horizontalAnchorOffset = 0
+        verticalAnchorOffset = 0
+        previousBackgroundDragDelta = .zero
+        lastAnchorFrame = nil
+        needsReanchorAfterScreenChange = false
+        needsFullResetAfterAnchorScreenChange = false
+
+        // Force dock + side via smart preferredInitial logic computed on the *fresh* anchor
+        // + destination visibleFrame (exactly the resetPosition / startTracking intent).
+        let (smartDock, smartSide) = preferredInitialDockPositionAndSide(for: freshConvertedAnchor)
+        var didUpdateView = false
+        if preferredDockPosition != smartDock {
+            preferredDockPosition = smartDock
+            didUpdateView = true
+        }
+        if dockPosition != smartDock {
+            dockPosition = smartDock
+            didUpdateView = true
+        }
+        if horizontalSide != smartSide {
+            horizontalSide = smartSide
+            didUpdateView = true
+        }
+        if didUpdateView {
+            updateRootView()
+        }
+        updateRootView()
+
+        resizePanelsToFitContent()
+
+        // Temporarily hide for a true clean-slate re-draw from new coordinates
+        controlsPanel.orderOut(nil)
+        panel.orderOut(nil)
+
+        // Re-resolve attachment using *only* the fresh AX rect + zeroed state + smart dock/side
+        // + destination screen geometry. The fresh AX rect from the moved Chrome window is the
+        // sole authoritative input for this entire cycle.
+        let freshResolved = resolveAttachment(for: state)
+        updateHealth(freshResolved.health)
+
+        guard let origin = freshResolved.origin else {
+            // Fallback: make panels visible; follow-ups will correct
+            panel.orderFrontRegardless()
+            controlsPanel.orderFrontRegardless()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.syncVisibility()
+            }
+            lastAnchorFrame = freshConvertedAnchor
+            return
+        }
+
+        // Full setFrame (not merely setOrigin) + bring front
+        isUpdatingPosition = true
+        let targetFrame = CGRect(origin: origin, size: panel.frame.size)
+        panel.setFrame(targetFrame, display: true)
+        isUpdatingPosition = false
+
+        // Multiple rounds of complete re-render + strong hosting view rebuilds.
+        // This is explicitly "complete re-render", not a single invalidate or origin tweak.
+        for _ in 0..<3 {
+            invalidatePanelRendering()
+            hostingView.layoutSubtreeIfNeeded()
+            hostingView.displayIfNeeded()
+            hostingView.layer?.setNeedsDisplay()
+            controlsHostingView.layoutSubtreeIfNeeded()
+            controlsHostingView.displayIfNeeded()
+            controlsHostingView.layer?.setNeedsDisplay()
+
+            // Dedicated force rebuild (rootView self-assign triggers full SwiftUI refresh)
+            hostingView.forceFullRebuildAndDisplay()
+            controlsHostingView.forceFullRebuildAndDisplay()
+
+            containerView.layer?.setNeedsDisplay()
+            controlsContainerView.layer?.setNeedsDisplay()
+            panel.invalidateShadow()
+        }
+
+        panel.orderFrontRegardless()
+        syncControlsPanelVisibility()
+
+        // Capture the authoritative fresh rect now that re-render is complete
+        lastAnchorFrame = freshConvertedAnchor
+
+        // 1-2 extra sync + rebuild passes with slightly longer delays to let AX, screens,
+        // backing scales, and SwiftUI layout fully settle on the destination resolution.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            guard let self else { return }
+            self.syncLayerBackingScales()
+            self.invalidatePanelRendering()
+            self.hostingView.forceFullRebuildAndDisplay()
+            self.controlsHostingView.forceFullRebuildAndDisplay()
+            self.syncVisibility()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) { [weak self] in
+            guard let self else { return }
+            self.syncLayerBackingScales()
+            self.invalidatePanelRendering()
+            self.hostingView.forceFullRebuildAndDisplay()
+            self.controlsHostingView.forceFullRebuildAndDisplay()
+            self.syncVisibility()
+        }
+    }
+
     private func clampedOrigin(proposedOrigin: CGPoint, preferredScreen: NSScreen?) -> CGPoint {
         let visibleFrame = preferredScreen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? CGRect(origin: .zero, size: panel.frame.size)
         let inset: CGFloat = 12
@@ -3449,8 +3929,25 @@ final class StackOverlayPanelController {
 
     private func referenceScreen(for anchorFrame: CGRect) -> NSScreen? {
         NSScreen.screens.first(where: { $0.visibleFrame.intersects(anchorFrame) })
+            ?? NSScreen.screens.first(where: { $0.frame.intersects(anchorFrame) })
             ?? NSScreen.screens.first(where: { $0.visibleFrame.intersects(panel.frame) })
             ?? NSScreen.main
+    }
+
+    /// Returns the backingScaleFactor of the screen that owns (intersects) the given
+    /// anchor frame rect (already converted to screen coordinates). Used to detect when
+    /// the AX anchor window has crossed from one resolution screen to another (e.g. 2x
+    /// Retina → 1x external). This comparison (newly converted fresh AX rect vs. the
+    /// screen/scale implied by previous lastAnchorFrame rect) drives the full clean-slate
+    /// re-render path.
+    private func backingScale(forFrameInScreenSpace frame: CGRect) -> CGFloat? {
+        if let screen = referenceScreen(for: frame) {
+            return screen.backingScaleFactor
+        }
+        if let screen = NSScreen.screens.first(where: { $0.frame.intersects(frame) }) {
+            return screen.backingScaleFactor
+        }
+        return NSScreen.main?.backingScaleFactor
     }
 
     private func convertAXFrameToScreenCoordinates(_ frame: CGRect) -> CGRect {
@@ -3491,6 +3988,7 @@ final class CombineOverlayPanelController {
     private var isUpdatingPosition = false
     private var isDraggingBackground = false
     private var dragStartOrigin: CGPoint?
+    private var needsReanchorAfterScreenChange = false
 
     init() {
         hostingView = TransparentHostingView(
@@ -3538,6 +4036,7 @@ final class CombineOverlayPanelController {
         }
 
         installDisplayChangeObservers()
+        syncLayerBackingScales()
     }
 
     func startTracking(frameProvider: @escaping () -> CGRect?) {
@@ -3742,6 +4241,11 @@ final class CombineOverlayPanelController {
         let handler: (Notification) -> Void = { [weak self] _ in
             self?.handleDisplayMetricsChanged()
         }
+        // Surgical screen-change handler (see Stack version for rationale).
+        let screenChangeHandler: (Notification) -> Void = { [weak self] _ in
+            self?.needsReanchorAfterScreenChange = true
+            self?.handleDisplayMetricsChanged()
+        }
 
         screenParametersObserver = notificationCenter.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -3753,7 +4257,7 @@ final class CombineOverlayPanelController {
             forName: NSWindow.didChangeScreenNotification,
             object: panel,
             queue: .main,
-            using: handler
+            using: screenChangeHandler
         )
         panelBackingObserver = notificationCenter.addObserver(
             forName: NSWindow.didChangeBackingPropertiesNotification,
@@ -3764,6 +4268,18 @@ final class CombineOverlayPanelController {
     }
 
     private func handleDisplayMetricsChanged() {
+        syncLayerBackingScales()
+
+        // Lighter re-anchor for suggestion overlays: zero the in-memory anchorOffset
+        // (analogous to Stack's horiz/vert + delta) only on actual screen change.
+        // This lets syncVisibility + clampedOrigin + referenceScreen compute a fresh
+        // sensible position on the destination screen instead of using a stale delta
+        // from the higher-res source screen.
+        if needsReanchorAfterScreenChange {
+            anchorOffset = .zero
+            needsReanchorAfterScreenChange = false
+        }
+
         hostingView.invalidateIntrinsicContentSize()
         hostingView.layoutSubtreeIfNeeded()
         let fittingSize = hostingView.fittingSize
@@ -3772,9 +4288,31 @@ final class CombineOverlayPanelController {
         }
         invalidatePanelRendering()
         syncVisibility()
+
+        // Deferred settle passes (matches Stack).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            guard let self else { return }
+            self.syncLayerBackingScales()
+            self.invalidatePanelRendering()
+            self.syncVisibility()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self else { return }
+            self.syncLayerBackingScales()
+            self.invalidatePanelRendering()
+            self.syncVisibility()
+        }
     }
 
     private func invalidatePanelRendering() {
         invalidateOverlayRendering(for: panel)
+    }
+
+    private func syncLayerBackingScales() {
+        // Ensure the suggestion/combine overlay panel + its Transparent views
+        // + SwiftUI layers use the current display's backing scale.
+        syncBackingScale(for: panel)
+        syncBackingScale(in: containerView)
+        syncBackingScale(in: hostingView)
     }
 }

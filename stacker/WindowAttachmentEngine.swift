@@ -171,43 +171,42 @@ struct WindowAttachmentEngine {
     }
 
     func convertAXFrameToScreenCoordinates(_ frame: CGRect) -> CGRect {
-        // macOS Accessibility coordinates are flipped Y relative to the primary display
-        // (the one with the menu bar). We try to find the most relevant screen for the
-        // anchor window rather than blindly assuming a screen at (0,0).
+        // macOS Accessibility/System Events coordinates use a top-left global origin
+        // based on the primary display. AppKit screen coordinates use the same global
+        // X axis but a bottom-left Y axis. Always start with the primary-display
+        // transform; using the destination screen's maxY breaks side-by-side displays
+        // with different heights, because the AX Y offset still includes the taller
+        // primary display's coordinate space.
         let screens = NSScreen.screens
         guard !screens.isEmpty else { return frame }
 
-        // Prefer a screen that actually intersects the raw AX frame (in its native coord space).
-        let referenceScreen = screens.first(where: { $0.frame.intersects(frame) })
-            ?? screens.first(where: { $0.visibleFrame.intersects(frame) })
-            ?? NSScreen.main
-            ?? screens.first
+        let primaryMaxY = screens.first(where: { $0.frame.origin == .zero })?.frame.maxY
+            ?? NSScreen.main?.frame.maxY
+            ?? screens.map(\.frame.maxY).max()
+            ?? 0
 
-        let maxY = referenceScreen?.frame.maxY ?? (screens.first?.frame.maxY ?? 0)
-
-        let converted = CGRect(
+        let primaryConverted = CGRect(
             x: frame.origin.x,
-            y: maxY - frame.origin.y - frame.size.height,
+            y: primaryMaxY - frame.origin.y - frame.size.height,
             width: frame.size.width,
             height: frame.size.height
         )
 
-        // If the result lands on a real screen, use it. Otherwise fall back to the original.
-        if screens.contains(where: { $0.frame.intersects(converted) }) {
-            return converted
+        if screens.contains(where: { $0.frame.intersects(primaryConverted) }) {
+            return primaryConverted
         }
 
-        // Last-ditch attempt using the classic "screen at origin" rule
-        if let classic = screens.first(where: { $0.frame.origin == .zero })?.frame.maxY
-            ?? NSScreen.main?.frame.maxY {
-            let classicConverted = CGRect(
+        // Last-ditch fallback for unusual coordinate reports: try each screen maxY and
+        // pick the first candidate that lands on a real screen.
+        for screen in screens {
+            let candidate = CGRect(
                 x: frame.origin.x,
-                y: classic - frame.origin.y - frame.size.height,
+                y: screen.frame.maxY - frame.origin.y - frame.size.height,
                 width: frame.size.width,
                 height: frame.size.height
             )
-            if screens.contains(where: { $0.frame.intersects(classicConverted) }) {
-                return classicConverted
+            if screens.contains(where: { $0.frame.intersects(candidate) }) {
+                return candidate
             }
         }
 
@@ -413,7 +412,9 @@ struct WindowAttachmentEngine {
     static func preferredInitialDockPositionAndSide(for anchorFrame: CGRect)
         -> (dock: StackOverlayDockPosition, side: StackOverlayHorizontalSide)
     {
-        guard let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(anchorFrame) }) ?? NSScreen.main else {
+        guard let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(anchorFrame) })
+            ?? NSScreen.screens.first(where: { $0.frame.intersects(anchorFrame) })
+            ?? NSScreen.main else {
             return (.top, .left)
         }
 
