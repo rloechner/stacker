@@ -9,6 +9,7 @@ struct stackerApp: App {
     var body: some Scene {
         WindowGroup("Stacker") {
             MainWindowView()
+                .background(StackerAdminWindowAccessor())
                 .frame(minWidth: 900, minHeight: 620)
         }
 
@@ -22,13 +23,33 @@ struct stackerApp: App {
             OverlayShortcutSettingsView()
         }
         .commands {
+            CommandGroup(replacing: .appVisibility) {
+                Button("Hide Stacker Window") {
+                    StackerAppWindowActions.hideMainWindow()
+                }
+                .keyboardShortcut("h", modifiers: [.command])
+
+                Button("Hide Others") {
+                    NSApp.hideOtherApplications(nil)
+                }
+                .keyboardShortcut("h", modifiers: [.command, .option])
+
+                Button("Show All") {
+                    NSApp.unhideAllApplications(nil)
+                }
+            }
+
             CommandMenu("Stacker") {
                 Button("Open Stacker") {
                     StackerAppWindowActions.openMainWindow()
                 }
                 .keyboardShortcut("0", modifiers: [.command])
 
-                Button("Refresh Browsers") {
+                Button("Hide Stacker Window") {
+                    StackerAppWindowActions.hideMainWindow()
+                }
+
+                Button("Hard Refresh Browsers") {
                     NotificationCenter.default.post(name: .stackerRefreshApplications, object: nil)
                 }
                 .keyboardShortcut("r", modifiers: [.command])

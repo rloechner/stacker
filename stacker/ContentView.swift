@@ -17,6 +17,9 @@ struct ContentView: View {
     @State private var combineOverlayController = CombineOverlayPanelController()
     @State private var refreshTimer: Timer?
     @State private var eligibleRefreshWorkItem: DispatchWorkItem?
+    @State private var isSystemPowerTransition = false
+    @State private var isDisplayReconfigurationTransition = false
+    @State private var displayReconfigurationWorkItem: DispatchWorkItem?
 
     init(presentation: StackerPresentation = .window) {
         self.presentation = presentation
@@ -556,7 +559,8 @@ struct ContentView: View {
 
     private func handleAppear() {
         startTrackingActiveApplications()
-        startTrackingSystemWake()
+        startTrackingSystemPowerEvents()
+        startTrackingDisplayReconfiguration()
         startSidebarObservers()
         startCombineOverlay()
         refreshAccessibilityState()
@@ -578,12 +582,15 @@ struct ContentView: View {
     private func handleDisappear() {
         combineOverlayController.close()
         stopTrackingActiveApplications()
-        stopTrackingSystemWake()
+        stopTrackingSystemPowerEvents()
+        stopTrackingDisplayReconfiguration()
         stopSidebarObservers()
         stopRefreshTimer()
 
         eligibleRefreshWorkItem?.cancel()
         eligibleRefreshWorkItem = nil
+        displayReconfigurationWorkItem?.cancel()
+        displayReconfigurationWorkItem = nil
     }
 
     private func startRefreshTimerIfNeeded() {
@@ -714,7 +721,7 @@ struct ContentView: View {
             windows: windows,
             existingSession: currentStackSession,
             availableWindows: availableWindows,
-            onError: { errorMessage = $0 },
+            onError: { handleStackControllerError($0, pid: targetApplication.processIdentifier) },
             onDebug: appendDebug,
             overlayHandlers: makeOverlayHandlers(for: targetApplication.processIdentifier)
         ) else { return }
@@ -908,6 +915,11 @@ struct ContentView: View {
             session.overlayPlacementPreference = preference
             if let dockPosition = preference.dockPosition {
                 session.overlayDockPosition = dockPosition
+                StackOverlayDockPositionPreference.set(
+                    dockPosition,
+                    bundleIdentifier: session.app.bundleIdentifier,
+                    appName: session.app.name
+                )
             }
             refreshOverlay(for: session)
         }
@@ -1296,31 +1308,66 @@ struct ContentView: View {
         eventCoordinator.stopTrackingActiveApplications()
     }
 
-    private func startTrackingSystemWake() {
-        eventCoordinator.startTrackingSystemWake {
-            handleSystemWake()
+    private func startTrackingSystemPowerEvents() {
+        eventCoordinator.startTrackingSystemPowerEvents(
+            onWillSleep: {
+                handleSystemWillSleep()
+            },
+            onWake: {
+                handleSystemWake()
+            }
+        )
+    }
+
+    private func stopTrackingSystemPowerEvents() {
+        eventCoordinator.stopTrackingSystemPowerEvents()
+    }
+
+    private func startTrackingDisplayReconfiguration() {
+        eventCoordinator.startTrackingDisplayReconfiguration {
+            handleDisplayReconfiguration()
         }
     }
 
-    private func stopTrackingSystemWake() {
-        eventCoordinator.stopTrackingSystemWake()
+    private func stopTrackingDisplayReconfiguration() {
+        eventCoordinator.stopTrackingDisplayReconfiguration()
     }
 
     private func stopSidebarObservers() {
         eventCoordinator.stopSidebarObservers()
     }
 
+    private func handleSystemWillSleep() {
+        isSystemPowerTransition = true
+        errorMessage = nil
+        appendDebug("System sleep detected; pausing active stacks and hiding widgets.")
+        activeStackSessions.forEach { session in
+            pauseStackForSystemPowerTransition(session, reason: "System sleep")
+        }
+        combineOverlayController.clear()
+        stopRefreshTimer()
+        postActiveStackCount()
+        postSidebarSnapshot()
+        syncCombineOverlay()
+    }
+
     private func handleSystemWake() {
         Task { @MainActor in
+            isSystemPowerTransition = true
             errorMessage = nil
             appendDebug("System wake detected; refreshing browser windows.")
-            try? await Task.sleep(for: .milliseconds(900))
-            await refreshBrowserSessionsAfterWake()
+            try? await Task.sleep(for: .milliseconds(1200))
+            await refreshBrowserSessionsAfterSystemTransition(reason: "system wake")
+            isSystemPowerTransition = false
+            if !isDisplayReconfigurationTransition {
+                resumeReadyStacksAfterSystemWake()
+                startRefreshTimerIfNeeded()
+            }
         }
     }
 
     @MainActor
-    private func refreshBrowserSessionsAfterWake() async {
+    private func refreshBrowserSessionsAfterSystemTransition(reason: String) async {
         refreshAccessibilityState()
         guard workspaceController.isAccessibilityTrusted() else {
             showAccessibilityAlert = true
@@ -1366,10 +1413,11 @@ struct ContentView: View {
                 windows: refreshedWindows,
                 existingSession: session,
                 availableWindows: outcome.availableWindows,
-                onError: { appendDebug("Wake refresh skipped transient window error: \($0)") },
+                onError: { appendDebug("\(reason.capitalized) refresh skipped window error: \($0)") },
                 onDebug: appendDebug,
                 overlayHandlers: makeOverlayHandlers(for: refreshedApp.processIdentifier)
             ) else {
+                markStackDegraded(for: session.app.processIdentifier, reason: "Unable to rebuild stack after \(reason).")
                 continue
             }
 
@@ -1385,6 +1433,58 @@ struct ContentView: View {
         syncCurrentStackState()
         syncCombineOverlay()
         postSidebarSnapshot()
+    }
+
+    private func handleDisplayReconfiguration() {
+        let wasTransitioning = isDisplayReconfigurationTransition
+        isDisplayReconfigurationTransition = true
+        errorMessage = nil
+        displayReconfigurationWorkItem?.cancel()
+
+        if !wasTransitioning {
+            appendDebug("Display reconfiguration detected; pausing active stacks and hiding widgets.")
+            activeStackSessions.forEach { session in
+                pauseStackForSystemPowerTransition(session, reason: "Display reconfiguration")
+            }
+            combineOverlayController.clear()
+            stopRefreshTimer()
+            postActiveStackCount()
+            postSidebarSnapshot()
+            syncCombineOverlay()
+        }
+
+        let workItem = DispatchWorkItem {
+            Task { @MainActor in
+                guard isDisplayReconfigurationTransition else { return }
+                appendDebug("Display reconfiguration settled; refreshing browser windows.")
+                try? await Task.sleep(for: .milliseconds(1200))
+                await refreshBrowserSessionsAfterSystemTransition(reason: "display reconfiguration")
+                isDisplayReconfigurationTransition = false
+                if !isSystemPowerTransition {
+                    resumeReadyStacksAfterSystemWake()
+                    startRefreshTimerIfNeeded()
+                }
+            }
+        }
+
+        displayReconfigurationWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: workItem)
+    }
+
+    private func pauseStackForSystemPowerTransition(_ session: ActiveStackSession, reason: String) {
+        appendDebug("Pausing stack for \(session.app.name): \(reason)")
+        session.controller.setSyncSuspended(true)
+        session.overlayController.setTemporarilyPaused(true)
+    }
+
+    private func resumeReadyStacksAfterSystemWake() {
+        for session in activeStackSessions where session.overlayHealth != .degraded {
+            session.controller.setSyncSuspended(false)
+            session.overlayController.setTemporarilyPaused(false)
+        }
+        postActiveStackCount()
+        postSidebarSnapshot()
+        syncCombineOverlay()
     }
 
     private func orderedWindowsAfterWake(
@@ -1570,14 +1670,34 @@ struct ContentView: View {
         }
     }
 
+    private func handleStackControllerError(_ message: String, pid: pid_t?) {
+        let normalizedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isFrameReadFailure = normalizedMessage.localizedCaseInsensitiveContains("source window frame")
+
+        if isSystemPowerTransition || isDisplayReconfigurationTransition {
+            appendDebug("Suppressing transient stack error: \(message)")
+            return
+        }
+
+        if isFrameReadFailure {
+            appendDebug("Suppressing transient stack error: \(message)")
+            if let pid {
+                markStackDegraded(for: pid, reason: normalizedMessage)
+            }
+            return
+        }
+
+        errorMessage = message
+    }
+
     private func markStackDegraded(for pid: pid_t, reason: String) {
         guard let session = activeStackSessions.first(where: { $0.app.processIdentifier == pid }) else { return }
 
         appendDebug("Marking stack degraded for \(session.app.name): \(reason)")
 
+        session.controller.setSyncSuspended(true)
+        session.overlayController.setTemporarilyPaused(true)
         session.overlayHealth = .degraded
-        // Hide the widget for this degraded stack
-        runtimeCoordinator.refreshOverlay(for: session)   // will respect health
 
         // Notify menu bar / sidebar that something needs attention
         postActiveStackCount()

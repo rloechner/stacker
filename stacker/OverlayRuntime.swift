@@ -9,6 +9,10 @@ private enum OverlayAttachmentPreference {
     private static let verticalOffsetKey = "verticalOffset"
 
     static func identifier(bundleIdentifier: String?, appName: String) -> String {
+        "global"
+    }
+
+    private static func legacyIdentifier(bundleIdentifier: String?, appName: String) -> String {
         if let bundleIdentifier, !bundleIdentifier.isEmpty {
             return "bundle:\(bundleIdentifier)"
         }
@@ -18,7 +22,10 @@ private enum OverlayAttachmentPreference {
     private static func storedValues(bundleIdentifier: String?, appName: String) -> [String: Double] {
         let identifier = identifier(bundleIdentifier: bundleIdentifier, appName: appName)
         let offsets = UserDefaults.standard.dictionary(forKey: key) as? [String: [String: Double]] ?? [:]
-        return offsets[identifier] ?? [:]
+        if let values = offsets[identifier] {
+            return values
+        }
+        return offsets[legacyIdentifier(bundleIdentifier: bundleIdentifier, appName: appName)] ?? [:]
     }
 
     static func currentHorizontalOffset(bundleIdentifier: String?, appName: String) -> CGFloat {
@@ -1204,7 +1211,7 @@ private struct StackOverlayStripView: View {
         )
         .scaleEffect(item.isSelected ? 1.12 : 1.0)
         .background(collapsedTabFrameReader(for: item.id))
-        .help("\(item.title)\nClick to focus this window")
+        .help(windowHelpText(for: item))
     }
 
     private func collapsedTabFill(for item: StackOverlayItem) -> LinearGradient {
@@ -1233,6 +1240,13 @@ private struct StackOverlayStripView: View {
         item.isSelected ? Color.white.opacity(0.55) : item.accent.tint.opacity(0.20)
     }
 
+    private func windowHelpText(for item: StackOverlayItem) -> String {
+        if let statusText = item.windowState.statusText {
+            return "\(item.title)\n\(statusText). Click to bring this window back into the stack."
+        }
+        return "\(item.title)\nClick to focus this window"
+    }
+
     private func collapsedTabBadge(for item: StackOverlayItem, diameter: CGFloat) -> some View {
         Circle()
             .fill(collapsedTabFill(for: item))
@@ -1240,6 +1254,19 @@ private struct StackOverlayStripView: View {
             Circle()
                 .stroke(collapsedTabStroke(for: item), lineWidth: item.isSelected ? 1.25 : 1)
         )
+        .overlay {
+            if let symbolName = item.windowState.symbolName {
+                Circle()
+                    .fill(.regularMaterial)
+                    .overlay(
+                        Image(systemName: symbolName)
+                            .font(.system(size: diameter * 0.34, weight: .heavy))
+                            .foregroundStyle(item.accent.tint)
+                    )
+                    .frame(width: diameter * 0.72, height: diameter * 0.72)
+                    .offset(x: diameter * 0.32, y: diameter * 0.32)
+            }
+        }
         .frame(width: diameter, height: diameter)
     }
 
@@ -1437,7 +1464,7 @@ private struct StackOverlayStripView: View {
                 }
             }
             .highPriorityGesture(windowDragGesture(for: item))
-            .help("\(item.title)\nClick to focus this window")
+            .help(windowHelpText(for: item))
             .zIndex(isDraggedItem ? 2 : 0)
     }
 
@@ -1463,7 +1490,7 @@ private struct StackOverlayStripView: View {
                 }
             }
             .highPriorityGesture(windowDragGesture(for: item))
-            .help("\(item.title)\nClick to focus this window")
+            .help(windowHelpText(for: item))
             .zIndex(isDraggedItem ? 2 : 0)
     }
 
@@ -1472,7 +1499,8 @@ private struct StackOverlayStripView: View {
             token: item.label,
             tint: item.accent.tint,
             selected: item.isSelected,
-            diameter: densityMetrics.verticalBadgeDiameter
+            diameter: densityMetrics.verticalBadgeDiameter,
+            windowState: item.windowState
         )
             .background(
                 Circle()
@@ -1492,7 +1520,8 @@ private struct StackOverlayStripView: View {
                 token: item.label,
                 tint: item.accent.tint,
                 selected: item.isSelected,
-                diameter: densityMetrics.badgeDiameter
+                diameter: densityMetrics.badgeDiameter,
+                windowState: item.windowState
             )
 
             if effectiveLabelMode == .names {
@@ -2294,6 +2323,7 @@ final class StackOverlayPanelController {
     private var lastAnchorFrame: CGRect?
     private var needsReanchorAfterScreenChange = false
     private var needsFullResetAfterAnchorScreenChange = false
+    private var isTemporarilyPaused = false
     /// One-time guard so we only emit the diagnostic log once per controller lifetime even if
     /// multiple resolve passes or startTracking detect a persisted-offset / screen-mismatch condition.
     private var didRehomeDueToScreenMismatch = false
@@ -2638,6 +2668,18 @@ final class StackOverlayPanelController {
         panel.close()
     }
 
+    func setTemporarilyPaused(_ paused: Bool) {
+        guard isTemporarilyPaused != paused else { return }
+        isTemporarilyPaused = paused
+
+        if paused {
+            controlsPanel.orderOut(nil)
+            panel.orderOut(nil)
+        } else {
+            syncVisibility()
+        }
+    }
+
     func setCurrentAppearance(_ appearance: StackOverlayAppearance) {
         self.appearance = appearance
         viewModel.appearance = appearance
@@ -2653,7 +2695,8 @@ final class StackOverlayPanelController {
                 subtitle: $0.subtitle,
                 label: $0.label,
                 accent: $0.accent,
-                isSelected: $0.id == id
+                isSelected: $0.id == id,
+                windowState: $0.windowState
             )
         }
         updateRootView()
@@ -3033,6 +3076,12 @@ final class StackOverlayPanelController {
     }
 
     private func syncVisibility() {
+        if isTemporarilyPaused {
+            controlsPanel.orderOut(nil)
+            panel.orderOut(nil)
+            return
+        }
+
         if isDraggingBackground {
             return
         }
@@ -3051,6 +3100,14 @@ final class StackOverlayPanelController {
             return
         }
 
+        let state = attachmentStateProvider?() ?? .missingAnchor
+        if state.health == .hidden {
+            updateHealth(.hidden)
+            controlsPanel.orderOut(nil)
+            panel.orderOut(nil)
+            return
+        }
+
         guard isTargetContextFrontmost else {
             updateHealth(.visible)
             controlsPanel.orderOut(nil)
@@ -3058,7 +3115,6 @@ final class StackOverlayPanelController {
             return
         }
 
-        let state = attachmentStateProvider?() ?? .missingAnchor
         preparePanelLayout(for: state)
 
         // 1. Proactively detect if the window is currently moving, resizing, or changing screens.
@@ -3358,32 +3414,6 @@ final class StackOverlayPanelController {
             previousBackgroundDragDelta = .zero
             horizontalAnchorOffset = 0
             verticalAnchorOffset = 0
-            // Strengthen existing screen-change re-home (CODER final): invoke the *smart*
-            // geometry-aware preferredInitialDockPositionAndSide (exactly as explicit
-            // resetPosition / "Reset Widget Position" does) instead of blindly restoring the
-            // old preferredDockPosition (which was captured on the source screen and may pick
-            // a rail with insufficient space or wrong side on a smaller/lower-res destination
-            // monitor). This + the zeroed offsets lets the destination visibleFrame + resolved
-            // + clamped pick a reliable home even for "moved and left there" cases.
-            if let anchor = currentAnchorFrameForLayout() {
-                let (smartDock, smartSide) = preferredInitialDockPositionAndSide(for: anchor)
-                var didUpdate = false
-                if preferredDockPosition != smartDock {
-                    preferredDockPosition = smartDock
-                    didUpdate = true
-                }
-                if dockPosition != smartDock {
-                    dockPosition = smartDock
-                    didUpdate = true
-                }
-                if horizontalSide != smartSide {
-                    horizontalSide = smartSide
-                    didUpdate = true
-                }
-                if didUpdate {
-                    updateRootView()
-                }
-            }
             needsReanchorAfterScreenChange = false
         }
 
@@ -3674,17 +3704,14 @@ final class StackOverlayPanelController {
             appName: appName
         )
 
-        // Reset always tries to put the widget in the most user-friendly default first:
-        // 1. Top-left (top rail, left content)
-        // 2. Left-top (left rail) for tall windows
-        //
-        // Only falls back to "best available space" if the preferred sides have very little room.
-        // This overrides any previous drag offset or explicit edge the user chose for *this* widget.
-        if let anchor = currentAnchorFrameForLayout() {
-            let (preferredDock, preferredSide) = preferredInitialDockPositionAndSide(for: anchor)
-            dockPosition = preferredDock
-            horizontalSide = preferredSide
-        }
+        placementPreference = .left
+        preferredDockPosition = .left
+        dockPosition = .left
+        StackOverlayPlacementPreferenceStore.set(placementPreference)
+        StackOverlayDockPositionPreference.set(.left, bundleIdentifier: appBundleIdentifier, appName: appName)
+        onPlacementPreferenceChanged(placementPreference)
+        onDockPositionChanged(.left)
+        updateRootView()
 
         onResetPositionRequested()
         syncVisibility()
@@ -3736,33 +3763,9 @@ final class StackOverlayPanelController {
         let panelScreen = panel.screen
         let isScreenMismatch = (panelScreen != nil && panelScreen != homeScreen)
 
-        let wasClamped = resolved.health == .clamped
-        // User-saved offset (small number) vs the magic default (-100_000) used for brand-new.
-        // Only re-home stale *persisted user* deltas that now produce bad (clamped or wrong-screen)
-        // placement; do not override the normal first-attach default behavior on single monitor.
-        let hasUserPersistedOffset = abs(horizontalAnchorOffset) < 99999 || abs(verticalAnchorOffset) > 0.5
-
-        if isScreenMismatch || (wasClamped && hasUserPersistedOffset) {
+        if isScreenMismatch {
             horizontalAnchorOffset = 0
             verticalAnchorOffset = 0
-
-            let (smartDock, smartSide) = preferredInitialDockPositionAndSide(for: anchor)
-            var didUpdateView = false
-            if preferredDockPosition != smartDock {
-                preferredDockPosition = smartDock
-                didUpdateView = true
-            }
-            if dockPosition != smartDock {
-                dockPosition = smartDock
-                didUpdateView = true
-            }
-            if horizontalSide != smartSide {
-                horizontalSide = smartSide
-                didUpdateView = true
-            }
-            if didUpdateView {
-                updateRootView()
-            }
 
             if !didRehomeDueToScreenMismatch {
                 // One-time (per controller) so Console/Xcode logs are not spammy.
@@ -3809,25 +3812,6 @@ final class StackOverlayPanelController {
         needsReanchorAfterScreenChange = false
         needsFullResetAfterAnchorScreenChange = false
 
-        // Force dock + side via smart preferredInitial logic computed on the *fresh* anchor
-        // + destination visibleFrame (exactly the resetPosition / startTracking intent).
-        let (smartDock, smartSide) = preferredInitialDockPositionAndSide(for: freshConvertedAnchor)
-        var didUpdateView = false
-        if preferredDockPosition != smartDock {
-            preferredDockPosition = smartDock
-            didUpdateView = true
-        }
-        if dockPosition != smartDock {
-            dockPosition = smartDock
-            didUpdateView = true
-        }
-        if horizontalSide != smartSide {
-            horizontalSide = smartSide
-            didUpdateView = true
-        }
-        if didUpdateView {
-            updateRootView()
-        }
         updateRootView()
 
         resizePanelsToFitContent()

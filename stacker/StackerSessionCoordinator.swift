@@ -256,6 +256,11 @@ final class StackerSessionCoordinator {
         StackOverlayPlacementPreferenceStore.set(preference)
         if let dockPosition = preference.dockPosition {
             session.overlayDockPosition = dockPosition
+            StackOverlayDockPositionPreference.set(
+                dockPosition,
+                bundleIdentifier: session.app.bundleIdentifier,
+                appName: session.app.name
+            )
         }
         refreshOverlay(session)
         postSidebarSnapshot()
@@ -272,6 +277,11 @@ final class StackerSessionCoordinator {
         session.overlayPlacementPreference = StackOverlayPlacementPreference(dockPosition: position)
         StackOverlayPlacementPreferenceStore.set(session.overlayPlacementPreference)
         session.overlayDockPosition = position
+        StackOverlayDockPositionPreference.set(
+            position,
+            bundleIdentifier: session.app.bundleIdentifier,
+            appName: session.app.name
+        )
         refreshOverlay(session)
         postSidebarSnapshot()
     }

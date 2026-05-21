@@ -2,6 +2,33 @@ import SwiftUI
 import AppKit
 import Combine
 
+extension NSUserInterfaceItemIdentifier {
+    static let stackerAdminWindow = NSUserInterfaceItemIdentifier("stacker.adminWindow")
+}
+
+struct StackerAdminWindowAccessor: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        StackerAdminWindowMarkerView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            guard let window = nsView.window else { return }
+            window.identifier = .stackerAdminWindow
+            window.title = "Stacker"
+        }
+    }
+}
+
+private final class StackerAdminWindowMarkerView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window else { return }
+        window.identifier = .stackerAdminWindow
+        window.title = "Stacker"
+    }
+}
+
 enum OverlayShortcutPreference {
     static let hiddenKey = "stacker.overlayHidden"
     static let keyCodeKey = "stacker.overlayShortcutKeyCode"
@@ -11,13 +38,24 @@ enum OverlayShortcutPreference {
 }
 
 enum StackerAppWindowActions {
+    private static var adminWindows: [NSWindow] {
+        NSApp.windows.filter { $0.identifier == .stackerAdminWindow }
+    }
+
     static func openMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
-        if let window = NSApp.windows.first(where: { $0.canBecomeKey && $0.title.localizedCaseInsensitiveContains("stacker") }) ??
+        if let window = adminWindows.first ??
+            NSApp.windows.first(where: { $0.canBecomeKey && $0.title.localizedCaseInsensitiveContains("stacker") }) ??
             NSApp.windows.first(where: \.canBecomeKey) {
             window.makeKeyAndOrderFront(nil)
         } else {
             NSApp.sendAction(#selector(NSWindow.makeKeyAndOrderFront(_:)), to: nil, from: nil)
+        }
+    }
+
+    static func hideMainWindow() {
+        adminWindows.forEach { window in
+            window.orderOut(nil)
         }
     }
 
@@ -40,7 +78,7 @@ enum OverlayShortcutState {
         }
 
         if UserDefaults.standard.object(forKey: StackOverlayPlacementPreferenceStore.key) == nil {
-            StackOverlayPlacementPreferenceStore.set(.top)
+            StackOverlayPlacementPreferenceStore.set(.left)
         }
     }
 

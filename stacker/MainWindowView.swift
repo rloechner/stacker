@@ -73,6 +73,7 @@ struct MainWindowView: View {
     @State private var selectedActiveWindows: [EditorWindowSnapshot] = []
     @State private var selectedInactiveWindows: [EditorWindowSnapshot] = []
     @State private var draggingLinkedWindowID: Int?
+    @State private var adminRefreshWorkItem: DispatchWorkItem?
     private let settingsSelectionID = Int32.min
 
     var body: some View {
@@ -83,19 +84,30 @@ struct MainWindowView: View {
             detailPane
         }
         .frame(minWidth: 560, minHeight: 420)   // Tight utility size
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    MainWindowViewActions.refreshApplications()
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                .help("Refresh open browser windows")
-            }
-        }
         .onAppear {
-            MainWindowViewActions.refreshApplications()
-            MainWindowViewActions.readSelectedWindows()
+            scheduleAdminRefresh(delay: 0)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            scheduleAdminRefresh(delay: 0.15)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
+            guard let window = notification.object as? NSWindow,
+                  window.identifier == .stackerAdminWindow else { return }
+            scheduleAdminRefresh(delay: 0.15)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWorkspace.didLaunchApplicationNotification)) { notification in
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  BrowserSupport.isSupportedBrowser(app) else { return }
+            scheduleAdminRefresh(delay: 1.0)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWorkspace.didTerminateApplicationNotification)) { notification in
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  BrowserSupport.isSupportedBrowser(app) else { return }
+            scheduleAdminRefresh(delay: 0.25)
+        }
+        .onDisappear {
+            adminRefreshWorkItem?.cancel()
+            adminRefreshWorkItem = nil
         }
         .onChange(of: expandedPID) { _, newValue in
             guard newValue != settingsSelectionID else { return }
@@ -242,10 +254,6 @@ private extension MainWindowView {
                     MainWindowViewActions.autoStackApplication(app.pid)
                 }
             }
-
-            Button("Refresh Browsers") {
-                MainWindowViewActions.refreshApplications()
-            }
         }
     }
 
@@ -287,7 +295,7 @@ private extension MainWindowView {
                     ContentUnavailableView(
                         "Open Browser Windows",
                         systemImage: "person.2.crop.square.stack",
-                        description: Text("Open two or more windows in Chrome, Brave, Safari, Edge, or Firefox, then refresh Stacker.")
+                        description: Text("Open two or more windows in a supported browser, then return to Stacker.")
                     )
                     .frame(maxWidth: .infinity, minHeight: 320)
                 }
@@ -351,6 +359,12 @@ private extension MainWindowView {
                 Spacer()
 
                 if app.isActive {
+                    Button {
+                        MainWindowViewActions.hideMainWindow()
+                    } label: {
+                        Label("Hide Stacker", systemImage: "eye.slash")
+                    }
+
                     Button(role: .destructive) {
                         MainWindowViewActions.resetApplicationStack(app.pid)
                     } label: {
@@ -614,6 +628,16 @@ private extension MainWindowView {
     func toggleWidgetVisibility(forBundleIdentifier bundleIdentifier: String?, appName: String, pid: Int32) {
         _ = OverlayAppVisibilityPreference.toggle(bundleIdentifier: bundleIdentifier, appName: appName)
         MainWindowViewActions.toggleApplicationOverlayVisibility(bundleIdentifier: bundleIdentifier, appName: appName, pid: pid)
+    }
+
+    func scheduleAdminRefresh(delay: TimeInterval) {
+        adminRefreshWorkItem?.cancel()
+        let workItem = DispatchWorkItem {
+            MainWindowViewActions.refreshApplications()
+            MainWindowViewActions.readSelectedWindows()
+        }
+        adminRefreshWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 }
 

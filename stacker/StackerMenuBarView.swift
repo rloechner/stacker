@@ -53,6 +53,10 @@ final class MenuBarStateStore: ObservableObject {
         StackerAppWindowActions.openMainWindow()
     }
 
+    func hideMainWindow() {
+        StackerAppWindowActions.hideMainWindow()
+    }
+
     func openSettings() {
         StackerAppWindowActions.openSettings()
     }
@@ -223,9 +227,15 @@ struct StackerMenuBarContent: View {
             }
 
             Button {
+                state.hideMainWindow()
+            } label: {
+                Label("Hide Stacker", systemImage: "eye.slash")
+            }
+
+            Button {
                 state.refreshApplications()
             } label: {
-                Label("Refresh Browsers", systemImage: "arrow.clockwise")
+                Label("Hard Refresh Browsers", systemImage: "arrow.clockwise")
             }
 
             Button {

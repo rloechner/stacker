@@ -387,11 +387,42 @@ enum StackOverlayPlacementPreferenceStore {
     static let key = "stacker.overlayPlacementPreference"
 
     static func current() -> StackOverlayPlacementPreference {
-        StackOverlayPlacementPreference(rawValue: UserDefaults.standard.string(forKey: key) ?? "") ?? .top
+        StackOverlayPlacementPreference(rawValue: UserDefaults.standard.string(forKey: key) ?? "") ?? .left
     }
 
     static func set(_ preference: StackOverlayPlacementPreference) {
         UserDefaults.standard.set(preference.rawValue, forKey: key)
+    }
+}
+
+enum StackOverlayDockPositionPreference {
+    static let key = "stacker.overlayDockPositionsByApp.v1"
+    private static let globalIdentifier = "global"
+
+    static func appIdentifier(bundleIdentifier: String?, appName: String) -> String {
+        globalIdentifier
+    }
+
+    private static func legacyAppIdentifier(bundleIdentifier: String?, appName: String) -> String {
+        if let bundleIdentifier, !bundleIdentifier.isEmpty {
+            return "bundle:\(bundleIdentifier)"
+        }
+        return "name:\(appName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
+    }
+
+    static func current(bundleIdentifier: String?, appName: String) -> StackOverlayDockPosition? {
+        let identifier = appIdentifier(bundleIdentifier: bundleIdentifier, appName: appName)
+        let values = UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:]
+        let rawValue = values[identifier] ?? values[legacyAppIdentifier(bundleIdentifier: bundleIdentifier, appName: appName)]
+        guard let rawValue else { return nil }
+        return StackOverlayDockPosition(rawValue: rawValue)
+    }
+
+    static func set(_ position: StackOverlayDockPosition, bundleIdentifier: String?, appName: String) {
+        let identifier = appIdentifier(bundleIdentifier: bundleIdentifier, appName: appName)
+        var values = UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:]
+        values[identifier] = position.rawValue
+        UserDefaults.standard.set(values, forKey: key)
     }
 }
 
@@ -476,12 +507,41 @@ enum StackOverlayDotPalettePreference {
 }
 
 struct StackOverlayItem: Identifiable {
+    enum WindowState {
+        case normal
+        case minimized
+        case fullscreen
+
+        var statusText: String? {
+            switch self {
+            case .normal:
+                return nil
+            case .minimized:
+                return "Minimized"
+            case .fullscreen:
+                return "Fullscreen"
+            }
+        }
+
+        var symbolName: String? {
+            switch self {
+            case .normal:
+                return nil
+            case .minimized:
+                return "minus"
+            case .fullscreen:
+                return "arrow.up.left.and.arrow.down.right"
+            }
+        }
+    }
+
     let id: UInt
     let title: String
     let subtitle: String?
     let label: String
     let accent: StackPillAccent
     let isSelected: Bool
+    let windowState: WindowState
 
     init(
         id: UInt,
@@ -489,7 +549,8 @@ struct StackOverlayItem: Identifiable {
         subtitle: String?,
         label: String,
         accent: StackPillAccent,
-        isSelected: Bool
+        isSelected: Bool,
+        windowState: WindowState = .normal
     ) {
         self.id = id
         self.title = title
@@ -497,6 +558,7 @@ struct StackOverlayItem: Identifiable {
         self.label = label
         self.accent = accent
         self.isSelected = isSelected
+        self.windowState = windowState
     }
 }
 
@@ -517,6 +579,21 @@ struct StackBadgeView: View {
     let tint: Color
     let selected: Bool
     let diameter: CGFloat
+    let windowState: StackOverlayItem.WindowState
+
+    init(
+        token: String,
+        tint: Color,
+        selected: Bool,
+        diameter: CGFloat,
+        windowState: StackOverlayItem.WindowState = .normal
+    ) {
+        self.token = token
+        self.tint = tint
+        self.selected = selected
+        self.diameter = diameter
+        self.windowState = windowState
+    }
 
     var body: some View {
         ZStack {
@@ -544,6 +621,22 @@ struct StackBadgeView: View {
                 Text(String(token.prefix(2)))
                     .font(.system(size: diameter * 0.32, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.white.opacity(selected ? 1.0 : 0.92))
+            }
+
+            if let stateSymbolName = windowState.symbolName {
+                Circle()
+                    .fill(.regularMaterial)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.primary.opacity(0.18), lineWidth: 0.8)
+                    )
+                    .frame(width: diameter * 0.46, height: diameter * 0.46)
+                    .overlay(
+                        Image(systemName: stateSymbolName)
+                            .font(.system(size: diameter * 0.20, weight: .heavy))
+                            .foregroundStyle(tint)
+                    )
+                    .offset(x: diameter * 0.26, y: diameter * 0.26)
             }
         }
         .frame(width: diameter, height: diameter)

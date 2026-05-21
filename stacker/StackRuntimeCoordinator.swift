@@ -55,16 +55,13 @@ final class StackRuntimeCoordinator {
             return nil
         }
 
-        // Compute smart initial dock for brand new stacks
-        var initialDockPosition = existingSession?.overlayDockPosition ?? .top
-        if existingSession == nil, let firstWindow = windows.first {
-            if let axWindow = firstWindow.window {
-                let rawFrame = CGRect(origin: axWindow.position ?? .zero, size: axWindow.size ?? .zero)
-                let frame = WindowAttachmentEngine().convertAXFrameToScreenCoordinates(rawFrame)
-                let (prefDock, _) = WindowAttachmentEngine.preferredInitialDockPositionAndSide(for: frame)
-                initialDockPosition = prefDock
-            }
-        }
+        let savedDockPosition = StackOverlayDockPositionPreference.current(
+            bundleIdentifier: targetApplication.bundleIdentifier,
+            appName: targetApplication.name
+        )
+        let initialDockPosition = existingSession?.overlayDockPosition ?? savedDockPosition ?? .left
+        let initialPlacementPreference = existingSession?.overlayPlacementPreference
+            ?? StackOverlayPlacementPreference(dockPosition: initialDockPosition)
 
         let activeWindowIDs = Set(windows.map(\.id))
         let activeWindowOrder = windows.map(\.id)
@@ -91,7 +88,7 @@ final class StackRuntimeCoordinator {
             overlayDisplayMode: existingSession?.overlayDisplayMode ?? .vertical,
             overlayLabelMode: existingSession?.overlayLabelMode ?? .names,
             overlayDensityMode: existingSession?.overlayDensityMode ?? .comfortable,
-            overlayPlacementPreference: existingSession?.overlayPlacementPreference ?? StackOverlayPlacementPreferenceStore.current(),
+            overlayPlacementPreference: initialPlacementPreference,
             overlayDockPosition: existingSession?.overlayDockPosition ?? initialDockPosition
         )
         overlayController.onHealthChanged = { [weak session] health in
@@ -200,8 +197,7 @@ final class StackRuntimeCoordinator {
         let displayMode = currentSession?.overlayDisplayMode ?? .vertical
         let labelMode = currentSession?.overlayLabelMode ?? .names
         let densityMode = currentSession?.overlayDensityMode ?? .comfortable
-        let placementPreference = currentSession?.overlayPlacementPreference ?? StackOverlayPlacementPreferenceStore.current()
-
+        let placementPreference = currentSession?.overlayPlacementPreference ?? StackOverlayPlacementPreference(dockPosition: initialDockPosition)
         let dockPosition = currentSession?.overlayDockPosition ?? initialDockPosition
 
         overlayController = StackOverlayPanelController(

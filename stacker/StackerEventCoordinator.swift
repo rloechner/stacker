@@ -21,7 +21,9 @@ struct StackerSidebarEventHandlers {
 @MainActor
 final class StackerEventCoordinator {
     private var activationObserver: NSObjectProtocol?
+    private var sleepObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
+    private var screenParametersObserver: NSObjectProtocol?
     private var sidebarObservers: [NSObjectProtocol] = []
 
     func startTrackingActiveApplications(onUpdate: @escaping (NSRunningApplication?) -> Void) {
@@ -44,8 +46,21 @@ final class StackerEventCoordinator {
         self.activationObserver = nil
     }
 
-    func startTrackingSystemWake(onWake: @escaping () -> Void) {
-        guard wakeObserver == nil else { return }
+    func startTrackingSystemPowerEvents(onWillSleep: @escaping () -> Void, onWake: @escaping () -> Void) {
+        if sleepObserver == nil {
+            sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.willSleepNotification,
+                object: nil,
+                queue: .main
+            ) { _ in
+                onWillSleep()
+            }
+        }
+
+        guard wakeObserver == nil else {
+            return
+        }
+
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,
@@ -55,10 +70,36 @@ final class StackerEventCoordinator {
         }
     }
 
-    func stopTrackingSystemWake() {
-        guard let wakeObserver else { return }
-        NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
-        self.wakeObserver = nil
+    func stopTrackingSystemPowerEvents() {
+        if let sleepObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(sleepObserver)
+            self.sleepObserver = nil
+        }
+
+        if let wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+            self.wakeObserver = nil
+        }
+    }
+
+    func startTrackingDisplayReconfiguration(onChange: @escaping () -> Void) {
+        guard screenParametersObserver == nil else {
+            return
+        }
+
+        screenParametersObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            onChange()
+        }
+    }
+
+    func stopTrackingDisplayReconfiguration() {
+        guard let screenParametersObserver else { return }
+        NotificationCenter.default.removeObserver(screenParametersObserver)
+        self.screenParametersObserver = nil
     }
 
     func startSidebarObservers(handlers: StackerSidebarEventHandlers) {

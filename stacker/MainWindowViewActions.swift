@@ -1,6 +1,10 @@
 import Foundation
 
 enum MainWindowViewActions {
+    static func hideMainWindow() {
+        StackerAppWindowActions.hideMainWindow()
+    }
+
     static func refreshApplications() {
         NotificationCenter.default.post(name: .stackerRefreshApplications, object: nil)
     }

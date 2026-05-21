@@ -7,19 +7,29 @@ enum BrowserSupport {
         case safari
         case edge
         case firefox
+        case orion
+        case duckDuckGo
 
         var bundleIdentifier: String {
+            bundleIdentifiers[0]
+        }
+
+        var bundleIdentifiers: [String] {
             switch self {
             case .chrome:
-                return "com.google.Chrome"
+                return ["com.google.Chrome"]
             case .brave:
-                return "com.brave.Browser"
+                return ["com.brave.Browser"]
             case .safari:
-                return "com.apple.Safari"
+                return ["com.apple.Safari"]
             case .edge:
-                return "com.microsoft.edgemac"
+                return ["com.microsoft.edgemac"]
             case .firefox:
-                return "org.mozilla.firefox"
+                return ["org.mozilla.firefox"]
+            case .orion:
+                return ["com.kagi.kagimacOS", "com.kagi.kagimacOS.RC"]
+            case .duckDuckGo:
+                return ["com.duckduckgo.macos.browser"]
             }
         }
 
@@ -35,6 +45,10 @@ enum BrowserSupport {
                 return "Microsoft Edge"
             case .firefox:
                 return "Firefox"
+            case .orion:
+                return "Orion"
+            case .duckDuckGo:
+                return "DuckDuckGo"
             }
         }
 
@@ -50,6 +64,10 @@ enum BrowserSupport {
                 return "Edge"
             case .firefox:
                 return "Firefox"
+            case .orion:
+                return "Orion"
+            case .duckDuckGo:
+                return "DuckDuckGo"
             }
         }
 
@@ -65,6 +83,10 @@ enum BrowserSupport {
                 return ["microsoft edge", "edge"]
             case .firefox:
                 return ["firefox"]
+            case .orion:
+                return ["orion", "orion rc", "orion browser"]
+            case .duckDuckGo:
+                return ["duckduckgo", "duckduckgo browser", "duckduckgo private browser"]
             }
         }
     }
@@ -78,7 +100,7 @@ enum BrowserSupport {
 
     static func browser(bundleIdentifier: String?, name: String?) -> Browser? {
         if let bundleIdentifier,
-           let match = Browser.allCases.first(where: { $0.bundleIdentifier == bundleIdentifier }) {
+           let match = Browser.allCases.first(where: { $0.bundleIdentifiers.contains(bundleIdentifier) }) {
             return match
         }
 

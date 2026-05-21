@@ -33,6 +33,7 @@ final class WindowStackController {
     private var relativeScriptLayoutFrames: [Int: CGRect] = [:]
     private var layoutAnchorWindowID: UInt?
     private var layoutAnchorScriptIndex: Int?
+    private var isSyncSuspended = false
 
     private let followerSyncDebounceInterval: TimeInterval = 0.16
 
@@ -154,6 +155,25 @@ final class WindowStackController {
         relativeScriptLayoutFrames = [:]
         layoutAnchorWindowID = nil
         layoutAnchorScriptIndex = nil
+        isSyncSuspended = false
+    }
+
+    func setSyncSuspended(_ suspended: Bool) {
+        guard isSyncSuspended != suspended else { return }
+        isSyncSuspended = suspended
+
+        if suspended {
+            frameSyncDebounceTimer?.invalidate()
+            frameSyncDebounceTimer = nil
+            pendingAXSyncSourceWindow = nil
+            scriptFrameSyncDebounceTimer?.invalidate()
+            scriptFrameSyncDebounceTimer = nil
+            pendingScriptSyncFrame = nil
+            pendingScriptSyncSourceIndex = nil
+            onDebug?("Suspended stack window syncing during system power transition.")
+        } else {
+            onDebug?("Resumed stack window syncing after system power transition.")
+        }
     }
 
     private func separateGroupedWindows() {
@@ -249,6 +269,8 @@ final class WindowStackController {
     }
 
     private func pollScriptWindows() {
+        guard !isSyncSuspended else { return }
+        guard !isTargetApplicationHidden() else { return }
         guard !isApplyingScriptSync, let appName = scriptAppName else { return }
         let currentStates = WindowScriptBridge.fetchWindows(forProcessIdentifier: appPID, windowIndices: groupedScriptIndices)
         reconcileScriptWindows(with: currentStates)
@@ -277,6 +299,8 @@ final class WindowStackController {
     }
 
     private func handleNotification(for element: AXUIElement, notification: String) {
+        guard !isSyncSuspended else { return }
+        guard !isTargetApplicationHidden() else { return }
         guard !isApplyingSync else { return }
         if notification == kAXUIElementDestroyedNotification as String {
             reconcileAXWindows()
@@ -290,6 +314,7 @@ final class WindowStackController {
     }
 
     private func scheduleAXSync(from sourceWindow: AXUIElement) {
+        guard !isSyncSuspended else { return }
         pendingAXSyncSourceWindow = sourceWindow
         frameSyncDebounceTimer?.invalidate()
         frameSyncDebounceTimer = Timer.scheduledTimer(withTimeInterval: followerSyncDebounceInterval, repeats: false) { [weak self] _ in
@@ -303,12 +328,17 @@ final class WindowStackController {
     private func flushPendingAXSync() {
         frameSyncDebounceTimer?.invalidate()
         frameSyncDebounceTimer = nil
+        guard !isSyncSuspended else {
+            pendingAXSyncSourceWindow = nil
+            return
+        }
         guard let sourceWindow = pendingAXSyncSourceWindow else { return }
         pendingAXSyncSourceWindow = nil
         syncFrame(from: sourceWindow)
     }
 
     private func scheduleScriptSync(from state: ScriptWindowState, appName: String) {
+        guard !isSyncSuspended else { return }
         pendingScriptSyncFrame = state.frame
         pendingScriptSyncSourceIndex = state.index
         selectedWindowID = groupedWindows.first(where: { $0.scriptIndex == state.index })?.id ?? selectedWindowID
@@ -324,6 +354,11 @@ final class WindowStackController {
     private func flushPendingScriptSync(appName: String) {
         scriptFrameSyncDebounceTimer?.invalidate()
         scriptFrameSyncDebounceTimer = nil
+        guard !isSyncSuspended else {
+            pendingScriptSyncFrame = nil
+            pendingScriptSyncSourceIndex = nil
+            return
+        }
         guard let changedFrame = pendingScriptSyncFrame,
               let sourceIndex = pendingScriptSyncSourceIndex else { return }
         pendingScriptSyncFrame = nil
@@ -352,6 +387,8 @@ final class WindowStackController {
     }
 
     private func syncFrame(from sourceWindow: AXUIElement) {
+        guard !isSyncSuspended else { return }
+        guard !isTargetApplicationHidden() else { return }
         reconcileAXWindows()
         guard let position = sourceWindow.position, let size = sourceWindow.size else {
             onError?("Unable to read the source window frame.")
@@ -580,9 +617,24 @@ final class WindowStackController {
                 subtitle: nil,
                 label: "\(index + 1)",
                 accent: accents[id] ?? .blue,
-                isSelected: id == highlightedID
+                isSelected: id == highlightedID,
+                windowState: overlayWindowState(for: id)
             )
         }
+    }
+
+    private func overlayWindowState(for id: UInt) -> StackOverlayItem.WindowState {
+        guard let window = groupedWindows.first(where: { $0.id == id })?.window else {
+            return .normal
+        }
+
+        if window.isMinimized {
+            return .minimized
+        }
+        if window.isFullscreen {
+            return .fullscreen
+        }
+        return .normal
     }
 
     func overlayAnchorFrame() -> CGRect? {
@@ -608,6 +660,10 @@ final class WindowStackController {
     func overlayAttachmentState() -> StackOverlayAttachmentState {
         guard AXIsProcessTrusted() else {
             return .permissionBlocked
+        }
+
+        if isTargetApplicationHidden() {
+            return .hidden
         }
 
         let activeID = currentFocusedWindowID()
@@ -639,6 +695,14 @@ final class WindowStackController {
         }
 
         return .missingAnchor
+    }
+
+    private func isTargetApplicationHidden() -> Bool {
+        guard appPID != 0,
+              let runningApplication = NSRunningApplication(processIdentifier: appPID) else {
+            return false
+        }
+        return runningApplication.isHidden
     }
 
     func groupedWindowChoices(in order: [UInt]? = nil) -> [WindowChoice] {
