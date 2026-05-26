@@ -6,7 +6,13 @@ Open two or more windows in a supported browser, turn on a stack, and use the at
 
 Stacker does not launch browsers, restore sessions, or manage every app on your Mac. It works with browser windows that are already open.
 
-> Demo video or screenshots can go here.
+<img width="924" height="707" alt="Screenshot 2026-05-26 at 9 20 39 AM" src="https://github.com/user-attachments/assets/fd93ed68-9156-4440-8818-78533c990368" />
+
+<img width="1274" height="1081" alt="Screenshot 2026-05-26 at 9 24 49 AM" src="https://github.com/user-attachments/assets/cbcea173-96d6-4dd9-ad3f-2bb7b67f9690" />
+
+https://github.com/user-attachments/assets/c3a56b44-222a-4b38-b52f-bbfb2113c531
+
+https://github.com/user-attachments/assets/03cd95aa-f807-4152-8bce-bf3f4bc86fa8
 
 ## What It Does
 
