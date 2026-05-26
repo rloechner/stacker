@@ -142,6 +142,24 @@ enum WindowScriptBridge {
         focusWindow(index, processReference: "(first process whose unix id is \(processIdentifier))")
     }
 
+    @discardableResult
+    static func setMinimized(_ minimized: Bool, forWindowIndex index: Int, processIdentifier: pid_t) -> Bool {
+        let source = """
+        tell application "System Events"
+            tell (first process whose unix id is \(processIdentifier))
+                try
+                    set value of attribute "AXMinimized" of window \(index) to \(minimized ? "true" : "false")
+                    return true
+                on error
+                    return false
+                end try
+            end tell
+        end tell
+        """
+
+        return run(source)?.trimmingCharacters(in: .whitespacesAndNewlines) == "true"
+    }
+
     private static func focusWindow(_ index: Int, processReference: String) {
         let source = """
         tell application "System Events"

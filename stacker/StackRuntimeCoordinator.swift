@@ -14,6 +14,8 @@ struct StackOverlayCoordinatorHandlers {
     let onTurnOff: () -> Void
     let onMove: (UInt, Int) -> Void
     let onReorder: (UInt, UInt) -> Void
+    let onMinimize: (UInt) -> Void
+    let onRestore: (UInt) -> Void
     let onRemove: (UInt) -> Void
 }
 
@@ -226,6 +228,8 @@ final class StackRuntimeCoordinator {
             onTurnOff: handlers.onTurnOff,
             onMove: handlers.onMove,
             onReorder: handlers.onReorder,
+            onMinimize: handlers.onMinimize,
+            onRestore: handlers.onRestore,
             onRemove: handlers.onRemove
         )
 

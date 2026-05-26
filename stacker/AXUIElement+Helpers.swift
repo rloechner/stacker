@@ -62,6 +62,11 @@ extension AXUIElement {
         AXUIElementSetAttributeValue(self, kAXSizeAttribute as CFString, value)
     }
 
+    @discardableResult
+    func setMinimized(_ minimized: Bool) -> Bool {
+        AXUIElementSetAttributeValue(self, "AXMinimized" as CFString, minimized as CFBoolean) == .success
+    }
+
     private func stringValue(for attribute: String) -> String? {
         var value: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(self, attribute as CFString, &value)

@@ -807,6 +807,9 @@ struct ContentView: View {
         let removedIDs = session.windowIDs.subtracting(remainingIDs)
 
         guard !removedIDs.isEmpty || remainingWindows.count != session.windowOrder.count else {
+            refreshOverlay(for: session)
+            postSidebarSnapshot()
+            syncCombineOverlay()
             return
         }
 
@@ -934,8 +937,8 @@ struct ContentView: View {
 
     private func makeOverlayHandlers(for sessionPID: pid_t) -> StackOverlayCoordinatorHandlers {
         StackOverlayCoordinatorHandlers(
-            onSelect: { [weak sessionStore] id in
-                sessionStore?.activeStackSessions.first(where: { $0.app.processIdentifier == sessionPID })?.controller.focusWindow(withID: id)
+            onSelect: { id in
+                focusWindowInSession(for: sessionPID, id: id)
             },
             onDisplayModeChanged: { newMode in
                 updateOverlayDisplayMode(for: sessionPID, mode: newMode)
@@ -995,6 +998,12 @@ struct ContentView: View {
             onReorder: { sourceID, targetID in
                 reorderWindowInSession(for: sessionPID, sourceID: sourceID, before: targetID)
             },
+            onMinimize: { id in
+                minimizeWindowInSession(for: sessionPID, id: id)
+            },
+            onRestore: { id in
+                restoreWindowInSession(for: sessionPID, id: id)
+            },
             onRemove: { id in
                 removeWindowFromSession(for: sessionPID, id: id)
             }
@@ -1017,6 +1026,33 @@ struct ContentView: View {
             postSidebarSnapshot: postSidebarSnapshot,
             syncCombineOverlay: syncCombineOverlay
         )
+    }
+
+    private func focusWindowInSession(for pid: pid_t, id: UInt) {
+        guard let session = activeStackSessions.first(where: { $0.app.processIdentifier == pid }) else { return }
+        session.controller.focusWindow(withID: id)
+        refreshOverlay(for: session)
+        syncSelectionState()
+        postSidebarSnapshot()
+        syncCombineOverlay()
+    }
+
+    private func minimizeWindowInSession(for pid: pid_t, id: UInt) {
+        guard let session = activeStackSessions.first(where: { $0.app.processIdentifier == pid }) else { return }
+        session.controller.minimizeWindow(id: id)
+        refreshOverlay(for: session)
+        syncSelectionState()
+        postSidebarSnapshot()
+        syncCombineOverlay()
+    }
+
+    private func restoreWindowInSession(for pid: pid_t, id: UInt) {
+        guard let session = activeStackSessions.first(where: { $0.app.processIdentifier == pid }) else { return }
+        session.controller.restoreWindow(id: id)
+        refreshOverlay(for: session)
+        syncSelectionState()
+        postSidebarSnapshot()
+        syncCombineOverlay()
     }
 
     private func reorderWindowInSession(for pid: pid_t, sourceID: UInt, before targetID: UInt) {

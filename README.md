@@ -85,7 +85,10 @@ The widget uses dots or labels for stacked windows:
 
 - active windows appear emphasized;
 - inactive windows stay available;
-- minimized or fullscreen windows show a small state marker but can still be selected back into the stack.
+- minimized windows become a yellow circle with a dash and can be restored from the widget;
+- fullscreen windows show a fullscreen marker and remain part of the stack, but are not used as widget anchors.
+
+Right-click a window dot to focus, minimize, restore, or remove that window from the stack. Remove uses an `xmark`; minimize uses the macOS-style yellow dash state so the two actions are visually distinct.
 
 ### Menu Bar
 
@@ -101,7 +104,7 @@ The menu bar extra provides quick access to:
 ## Known Limitations
 
 - Stacker is focused on browser windows, not arbitrary Mac apps.
-- Fullscreen and minimized browser windows are treated as recoverable but unsupported for active widget anchoring.
+- Fullscreen browser windows are treated as recoverable stack members, but are not used for active widget anchoring in v1.0.
 - Browser Accessibility behavior can vary by browser version and macOS release.
 - Stacker does not save browser sessions or reopen closed windows.
 - Public binary distribution still requires proper signing, packaging, and notarization.

@@ -533,6 +533,17 @@ struct StackOverlayItem: Identifiable {
                 return "arrow.up.left.and.arrow.down.right"
             }
         }
+
+        var tint: Color {
+            switch self {
+            case .normal:
+                return .clear
+            case .minimized:
+                return Color(red: 1.0, green: 0.72, blue: 0.18)
+            case .fullscreen:
+                return Color(red: 0.32, green: 0.58, blue: 1.0)
+            }
+        }
     }
 
     let id: UInt
@@ -596,24 +607,24 @@ struct StackBadgeView: View {
     }
 
     var body: some View {
+        let parkedOpacity: Double = windowState == .normal ? 1.0 : 0.56
+
         ZStack {
             Circle()
                 .fill(
-                    LinearGradient(
-                        colors: selected
-                            ? [tint.opacity(1.0), tint.opacity(0.86)]
-                            : [tint.opacity(0.72), tint.opacity(0.48)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+                    badgeFill(parkedOpacity: parkedOpacity)
                 )
                 .overlay(
                     Circle()
-                        .stroke(selected ? Color.white.opacity(0.90) : tint.opacity(0.36), lineWidth: selected ? 2.1 : 1)
+                        .stroke(badgeStroke, lineWidth: selected ? 2.1 : 1)
                 )
-                .shadow(color: tint.opacity(selected ? 0.28 : 0.08), radius: selected ? 5 : 2, y: selected ? 1 : 0)
+                .shadow(color: badgeShadow, radius: selected ? 5 : 2, y: selected ? 1 : 0)
 
-            if let symbolName = stackSymbolName(for: token) {
+            if windowState == .minimized {
+                Image(systemName: "minus")
+                    .font(.system(size: diameter * 0.44, weight: .black))
+                    .foregroundStyle(Color.white.opacity(0.96))
+            } else if let symbolName = stackSymbolName(for: token) {
                 Image(systemName: symbolName)
                     .font(.system(size: diameter * 0.42, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(selected ? 1.0 : 0.92))
@@ -623,7 +634,7 @@ struct StackBadgeView: View {
                     .foregroundStyle(Color.white.opacity(selected ? 1.0 : 0.92))
             }
 
-            if let stateSymbolName = windowState.symbolName {
+            if windowState != .minimized, let stateSymbolName = windowState.symbolName {
                 Circle()
                     .fill(.regularMaterial)
                     .overlay(
@@ -634,11 +645,46 @@ struct StackBadgeView: View {
                     .overlay(
                         Image(systemName: stateSymbolName)
                             .font(.system(size: diameter * 0.20, weight: .heavy))
-                            .foregroundStyle(tint)
+                            .foregroundStyle(windowState.tint)
                     )
                     .offset(x: diameter * 0.26, y: diameter * 0.26)
             }
         }
         .frame(width: diameter, height: diameter)
+    }
+
+    private func badgeFill(parkedOpacity: Double) -> LinearGradient {
+        if windowState == .minimized {
+            return LinearGradient(
+                colors: [
+                    Color(red: 1.0, green: 0.78, blue: 0.24),
+                    Color(red: 0.92, green: 0.52, blue: 0.08)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+
+        return LinearGradient(
+            colors: selected
+                ? [tint.opacity(1.0 * parkedOpacity), tint.opacity(0.86 * parkedOpacity)]
+                : [tint.opacity(0.72 * parkedOpacity), tint.opacity(0.48 * parkedOpacity)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var badgeStroke: Color {
+        if windowState == .minimized {
+            return selected ? Color.white.opacity(0.90) : Color(red: 0.70, green: 0.38, blue: 0.02).opacity(0.42)
+        }
+        return selected ? Color.white.opacity(0.90) : tint.opacity(0.36)
+    }
+
+    private var badgeShadow: Color {
+        if windowState == .minimized {
+            return Color(red: 1.0, green: 0.66, blue: 0.12).opacity(selected ? 0.26 : 0.10)
+        }
+        return tint.opacity(selected ? 0.28 : 0.08)
     }
 }

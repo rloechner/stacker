@@ -728,6 +728,8 @@ private struct StackOverlayStripView: View {
     let onTurnOff: () -> Void
     let onMove: (UInt, Int) -> Void
     let onReorder: (UInt, UInt) -> Void
+    let onMinimize: (UInt) -> Void
+    let onRestore: (UInt) -> Void
     let onRemove: (UInt) -> Void
 
     private struct RemovalAnimationState: Identifiable {
@@ -1211,10 +1213,24 @@ private struct StackOverlayStripView: View {
         )
         .scaleEffect(item.isSelected ? 1.12 : 1.0)
         .background(collapsedTabFrameReader(for: item.id))
+        .contextMenu {
+            windowContextMenu(for: item)
+        }
         .help(windowHelpText(for: item))
     }
 
     private func collapsedTabFill(for item: StackOverlayItem) -> LinearGradient {
+        if item.windowState == .minimized {
+            return LinearGradient(
+                colors: [
+                    Color(red: 1.0, green: 0.78, blue: 0.24),
+                    Color(red: 0.92, green: 0.52, blue: 0.08)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+
         if item.isSelected {
             return LinearGradient(
                 colors: [
@@ -1237,7 +1253,10 @@ private struct StackOverlayStripView: View {
     }
 
     private func collapsedTabStroke(for item: StackOverlayItem) -> Color {
-        item.isSelected ? Color.white.opacity(0.55) : item.accent.tint.opacity(0.20)
+        if item.windowState == .minimized {
+            return item.isSelected ? Color.white.opacity(0.55) : Color(red: 0.70, green: 0.38, blue: 0.02).opacity(0.42)
+        }
+        return item.isSelected ? Color.white.opacity(0.55) : item.accent.tint.opacity(0.20)
     }
 
     private func windowHelpText(for item: StackOverlayItem) -> String {
@@ -1255,13 +1274,17 @@ private struct StackOverlayStripView: View {
                 .stroke(collapsedTabStroke(for: item), lineWidth: item.isSelected ? 1.25 : 1)
         )
         .overlay {
-            if let symbolName = item.windowState.symbolName {
+            if item.windowState == .minimized {
+                Image(systemName: "minus")
+                    .font(.system(size: diameter * 0.44, weight: .black))
+                    .foregroundStyle(Color.white.opacity(0.96))
+            } else if let symbolName = item.windowState.symbolName {
                 Circle()
                     .fill(.regularMaterial)
                     .overlay(
                         Image(systemName: symbolName)
                             .font(.system(size: diameter * 0.34, weight: .heavy))
-                            .foregroundStyle(item.accent.tint)
+                            .foregroundStyle(item.windowState.tint)
                     )
                     .frame(width: diameter * 0.72, height: diameter * 0.72)
                     .offset(x: diameter * 0.32, y: diameter * 0.32)
@@ -1464,6 +1487,9 @@ private struct StackOverlayStripView: View {
                 }
             }
             .highPriorityGesture(windowDragGesture(for: item))
+            .contextMenu {
+                windowContextMenu(for: item)
+            }
             .help(windowHelpText(for: item))
             .zIndex(isDraggedItem ? 2 : 0)
     }
@@ -1490,6 +1516,9 @@ private struct StackOverlayStripView: View {
                 }
             }
             .highPriorityGesture(windowDragGesture(for: item))
+            .contextMenu {
+                windowContextMenu(for: item)
+            }
             .help(windowHelpText(for: item))
             .zIndex(isDraggedItem ? 2 : 0)
     }
@@ -1512,6 +1541,30 @@ private struct StackOverlayStripView: View {
             )
             .shadow(color: item.isSelected ? item.accent.tint.opacity(0.10) : Color.black.opacity(0.03), radius: item.isSelected ? 5 : 2, y: 1)
             .scaleEffect(item.isSelected ? 1.02 : 1.0)
+    }
+
+    @ViewBuilder
+    private func windowContextMenu(for item: StackOverlayItem) -> some View {
+        if item.windowState == .minimized {
+            Button("Restore Window") {
+                onRestore(item.id)
+            }
+        } else {
+            Button("Minimize Window") {
+                onMinimize(item.id)
+            }
+            .disabled(item.windowState == .fullscreen)
+        }
+
+        Button("Focus Window") {
+            onSelect(item.id)
+        }
+
+        Divider()
+
+        Button("Remove from Stack", role: .destructive) {
+            triggerRemovalAnimation(for: item)
+        }
     }
 
     private func horizontalTabBody(for item: StackOverlayItem) -> some View {
@@ -1981,7 +2034,7 @@ private struct StackOverlayStripView: View {
         Button {
             triggerRemovalAnimation(for: item)
         } label: {
-            Image(systemName: "minus")
+            Image(systemName: "xmark")
                 .font(.system(size: 8, weight: .black))
                 .foregroundStyle(.white)
                 .frame(width: 16, height: 16)
@@ -2295,6 +2348,8 @@ final class StackOverlayPanelController {
     private let onTurnOff: () -> Void
     private let onMove: (UInt, Int) -> Void
     private let onReorder: (UInt, UInt) -> Void
+    private let onMinimize: (UInt) -> Void
+    private let onRestore: (UInt) -> Void
     private let onRemove: (UInt) -> Void
     private var moveObserver: NSObjectProtocol?
     private var activationObserver: NSObjectProtocol?
@@ -2359,6 +2414,8 @@ final class StackOverlayPanelController {
         onTurnOff: @escaping () -> Void,
         onMove: @escaping (UInt, Int) -> Void,
         onReorder: @escaping (UInt, UInt) -> Void,
+        onMinimize: @escaping (UInt) -> Void,
+        onRestore: @escaping (UInt) -> Void,
         onRemove: @escaping (UInt) -> Void
     ) {
         self.appPID = appPID
@@ -2392,6 +2449,8 @@ final class StackOverlayPanelController {
         self.onTurnOff = onTurnOff
         self.onMove = onMove
         self.onReorder = onReorder
+        self.onMinimize = onMinimize
+        self.onRestore = onRestore
         self.onRemove = onRemove
         viewModel = StackOverlayViewModel(
             appearance: appearance,
@@ -2425,6 +2484,8 @@ final class StackOverlayPanelController {
                 onTurnOff: onTurnOff,
                 onMove: onMove,
                 onReorder: onReorder,
+                onMinimize: onMinimize,
+                onRestore: onRestore,
                 onRemove: onRemove
             )
         )
@@ -2797,6 +2858,8 @@ final class StackOverlayPanelController {
             onTurnOff: onTurnOff,
             onMove: onMove,
             onReorder: onReorder,
+            onMinimize: onMinimize,
+            onRestore: onRestore,
             onRemove: onRemove
         )
         hostingView.onSecondaryClick = nil

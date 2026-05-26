@@ -107,6 +107,8 @@ final class WindowStackController {
             guard let axWindow = window.window else { continue }
             AXObserverAddNotification(createdObserver, axWindow, kAXMovedNotification as CFString, refcon)
             AXObserverAddNotification(createdObserver, axWindow, kAXResizedNotification as CFString, refcon)
+            AXObserverAddNotification(createdObserver, axWindow, kAXWindowMiniaturizedNotification as CFString, refcon)
+            AXObserverAddNotification(createdObserver, axWindow, kAXWindowDeminiaturizedNotification as CFString, refcon)
             AXObserverAddNotification(createdObserver, axWindow, kAXUIElementDestroyedNotification as CFString, refcon)
         }
 
@@ -304,6 +306,19 @@ final class WindowStackController {
         guard !isApplyingSync else { return }
         if notification == kAXUIElementDestroyedNotification as String {
             reconcileAXWindows()
+            return
+        }
+        if notification == kAXWindowMiniaturizedNotification as String ||
+            notification == kAXWindowDeminiaturizedNotification as String {
+            if notification == kAXWindowMiniaturizedNotification as String,
+               let minimizedChoice = groupedWindows.first(where: { choice in
+                   guard let window = choice.window else { return false }
+                   return CFHash(window) == CFHash(element)
+               }),
+               selectedWindowID == minimizedChoice.id {
+                selectedWindowID = preferredAnchorWindowID()
+            }
+            onGroupedWindowsChanged?(groupedWindows)
             return
         }
         guard notification == kAXMovedNotification as String || notification == kAXResizedNotification as String else {
@@ -638,7 +653,7 @@ final class WindowStackController {
     }
 
     func overlayAnchorFrame() -> CGRect? {
-        let activeID = currentFocusedWindowID()
+        let activeID = preferredAnchorWindowID()
 
         if let activeID,
            let activeWindow = groupedWindows.first(where: { $0.id == activeID })?.window,
@@ -666,10 +681,15 @@ final class WindowStackController {
             return .hidden
         }
 
-        let activeID = currentFocusedWindowID()
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == appPID else {
+            return .hidden
+        }
 
-        if let activeID,
-           let activeWindow = groupedWindows.first(where: { $0.id == activeID })?.window {
+        guard let activeID = focusedStackWindowIDForOverlay() else {
+            return .hidden
+        }
+
+        if let activeWindow = groupedWindows.first(where: { $0.id == activeID })?.window {
             if activeWindow.isMinimized || activeWindow.isFullscreen {
                 return .minimizedOrFullscreen
             }
@@ -684,8 +704,7 @@ final class WindowStackController {
             return .visible(anchorFrame: CGRect(origin: position, size: size))
         }
 
-        if let activeID,
-           scriptAppName != nil,
+        if scriptAppName != nil,
            let scriptIndex = groupedWindows.first(where: { $0.id == activeID })?.scriptIndex,
            let state = WindowScriptBridge.fetchWindows(forProcessIdentifier: appPID, windowIndices: [scriptIndex]).first {
             guard state.frame.width > 0, state.frame.height > 0 else {
@@ -695,6 +714,80 @@ final class WindowStackController {
         }
 
         return .missingAnchor
+    }
+
+    private func focusedStackWindowIDForOverlay() -> UInt? {
+        if !groupedWindows.isEmpty {
+            let systemWideElement = AXUIElementCreateSystemWide()
+            var value: CFTypeRef?
+            let result = AXUIElementCopyAttributeValue(systemWideElement, kAXFocusedWindowAttribute as CFString, &value)
+            if result == .success,
+               let focusedWindow = AXUIElement.from(value) {
+                if let match = groupedWindowID(matching: focusedWindow) {
+                    selectedWindowID = match
+                    return match
+                }
+                return nil
+            }
+
+            if appPID != 0 {
+                let appElement = AXUIElementCreateApplication(appPID)
+                var mainWindowValue: CFTypeRef?
+                let mainWindowResult = AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindowValue)
+                if mainWindowResult == .success,
+                   let mainWindow = AXUIElement.from(mainWindowValue) {
+                    if let match = groupedWindowID(matching: mainWindow) {
+                        selectedWindowID = match
+                        return match
+                    }
+                    return nil
+                }
+            }
+        }
+
+        guard scriptAppName != nil,
+              let mainIndex = WindowScriptBridge.mainWindowIndex(forProcessIdentifier: appPID),
+              let match = groupedWindows.first(where: { $0.scriptIndex == mainIndex }) else {
+            return nil
+        }
+        selectedWindowID = match.id
+        return match.id
+    }
+
+    private func groupedWindowID(matching axWindow: AXUIElement) -> UInt? {
+        groupedWindows.first { choice in
+            guard let window = choice.window else { return false }
+            return CFHash(window) == CFHash(axWindow)
+        }?.id
+    }
+
+    private func preferredAnchorWindowID() -> UInt? {
+        let focusedID = currentFocusedWindowID()
+        if let focusedID,
+           let window = groupedWindows.first(where: { $0.id == focusedID })?.window,
+           !window.isMinimized,
+           !window.isFullscreen {
+            return focusedID
+        }
+
+        if let focusedID,
+           groupedWindows.first(where: { $0.id == focusedID })?.window?.isFullscreen == true {
+            return focusedID
+        }
+
+        if !groupedWindows.isEmpty,
+           let visibleChoice = groupedWindows.first(where: { choice in
+               guard let window = choice.window else { return false }
+               return !window.isMinimized && !window.isFullscreen
+           }) {
+            return visibleChoice.id
+        }
+
+        if let focusedID {
+            return focusedID
+        }
+
+        return groupedWindows.first?.id
     }
 
     private func isTargetApplicationHidden() -> Bool {
@@ -749,6 +842,9 @@ final class WindowStackController {
         selectedWindowID = id
 
         if let axWindow = groupedWindows.first(where: { $0.id == id })?.window {
+            if axWindow.isMinimized {
+                _ = axWindow.setMinimized(false)
+            }
             _ = AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
             if appPID != 0 {
                 NSRunningApplication(processIdentifier: appPID)?.activate(options: [.activateAllWindows])
@@ -758,6 +854,7 @@ final class WindowStackController {
 
         guard scriptAppName != nil,
               let scriptIndex = groupedWindows.first(where: { $0.id == id })?.scriptIndex else { return }
+        _ = WindowScriptBridge.setMinimized(false, forWindowIndex: scriptIndex, processIdentifier: appPID)
         WindowScriptBridge.focusWindow(scriptIndex, processIdentifier: appPID)
     }
 
@@ -765,6 +862,9 @@ final class WindowStackController {
         selectedWindowID = window.id
 
         if let axWindow = window.window {
+            if axWindow.isMinimized {
+                _ = axWindow.setMinimized(false)
+            }
             _ = AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
             if appPID != 0 {
                 NSRunningApplication(processIdentifier: appPID)?.activate(options: [.activateAllWindows])
@@ -774,7 +874,47 @@ final class WindowStackController {
 
         guard scriptAppName != nil,
               let scriptIndex = window.scriptIndex else { return }
+        _ = WindowScriptBridge.setMinimized(false, forWindowIndex: scriptIndex, processIdentifier: appPID)
         WindowScriptBridge.focusWindow(scriptIndex, processIdentifier: appPID)
+    }
+
+    func minimizeWindow(id: UInt) {
+        if let axWindow = groupedWindows.first(where: { $0.id == id })?.window {
+            _ = axWindow.setMinimized(true)
+            if selectedWindowID == id {
+                selectedWindowID = preferredAnchorWindowID()
+            }
+            onGroupedWindowsChanged?(groupedWindows)
+            return
+        }
+
+        guard scriptAppName != nil,
+              let scriptIndex = groupedWindows.first(where: { $0.id == id })?.scriptIndex else { return }
+        _ = WindowScriptBridge.setMinimized(true, forWindowIndex: scriptIndex, processIdentifier: appPID)
+        if selectedWindowID == id {
+            selectedWindowID = preferredAnchorWindowID()
+        }
+        onGroupedWindowsChanged?(groupedWindows)
+    }
+
+    func restoreWindow(id: UInt) {
+        if let axWindow = groupedWindows.first(where: { $0.id == id })?.window {
+            _ = axWindow.setMinimized(false)
+            selectedWindowID = id
+            _ = AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
+            if appPID != 0 {
+                NSRunningApplication(processIdentifier: appPID)?.activate(options: [.activateAllWindows])
+            }
+            onGroupedWindowsChanged?(groupedWindows)
+            return
+        }
+
+        guard scriptAppName != nil,
+              let scriptIndex = groupedWindows.first(where: { $0.id == id })?.scriptIndex else { return }
+        _ = WindowScriptBridge.setMinimized(false, forWindowIndex: scriptIndex, processIdentifier: appPID)
+        selectedWindowID = id
+        WindowScriptBridge.focusWindow(scriptIndex, processIdentifier: appPID)
+        onGroupedWindowsChanged?(groupedWindows)
     }
 
     func bringStackToFront(windowOrder: [UInt]) {
