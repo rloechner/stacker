@@ -6,6 +6,10 @@ Open two or more windows in a supported browser, turn on a stack, and use the at
 
 Stacker does not launch browsers, restore sessions, or manage every app on your Mac. It works with browser windows that are already open.
 
+## Project Status
+
+Stacker is being released as a source-first, best-effort open-source project. The app builds and runs locally from source, but there is not yet a signed, notarized public binary. If you build it yourself, expect to grant macOS Accessibility permission and occasionally use the recovery controls for browser, sleep/wake, or display edge cases.
+
 <img width="924" height="707" alt="Screenshot 2026-05-26 at 9 20 39 AM" src="https://github.com/user-attachments/assets/fd93ed68-9156-4440-8818-78533c990368" />
 
 <img width="1274" height="1081" alt="Screenshot 2026-05-26 at 9 24 49 AM" src="https://github.com/user-attachments/assets/cbcea173-96d6-4dd9-ad3f-2bb7b67f9690" />
@@ -135,7 +139,7 @@ The helper builds into `/private/tmp/stacker-derived` with code signing disabled
 
 ## Release Plan
 
-The first public release is planned as `v1.0.0`.
+The first public release is source-first. A downloadable binary can come later after direct-distribution packaging is validated.
 
 Before publishing a downloadable binary, validate:
 
@@ -145,7 +149,7 @@ Before publishing a downloadable binary, validate:
 - packaged `.dmg` or `.zip` install flow;
 - Accessibility permission onboarding on a clean Mac.
 
-For source-only release, the main remaining work is QA across supported browsers and common display setups.
+For source-only use, the main remaining work is continued community QA across supported browsers and common display setups.
 
 ## QA Checklist
 
