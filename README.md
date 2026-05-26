@@ -61,7 +61,7 @@ Accessibility permission is required because Stacker needs to inspect, focus, mo
 4. Return to Stacker after granting permission.
 5. Select a browser in the sidebar.
 6. Turn on the switcher.
-7. Use the attached widget to switch between stacked windows.
+7. Use the attached widget, or macOS `Command-\`` window cycling, to switch between stacked windows.
 
 If the browser list does not update after opening windows, use `Stacker > Hard Refresh Browsers`.
 
@@ -83,6 +83,8 @@ The admin refreshes automatically when Stacker is focused, when supported browse
 ### Attached Widget
 
 The widget attaches to the browser window and can sit on the top, bottom, left, or right edge. Drag it around the window boundary to choose a placement.
+
+You can switch through the stacked browser windows with the widget or with the native macOS `Command-\`` shortcut. Stacker keeps the windows aligned so that standard same-app window cycling feels more like tabbing through one desktop slot.
 
 The widget uses dots or labels for stacked windows:
 
