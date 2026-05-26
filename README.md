@@ -10,9 +10,8 @@ Stacker does not launch browsers, restore sessions, or manage every app on your 
 
 <img width="1274" height="1081" alt="Screenshot 2026-05-26 at 9 24 49 AM" src="https://github.com/user-attachments/assets/cbcea173-96d6-4dd9-ad3f-2bb7b67f9690" />
 
-https://github.com/user-attachments/assets/c3a56b44-222a-4b38-b52f-bbfb2113c531
+https://github.com/user-attachments/assets/d4325b63-443a-4205-93d5-8e5f99e6d7d7
 
-https://github.com/user-attachments/assets/03cd95aa-f807-4152-8bce-bf3f4bc86fa8
 
 ## What It Does
 
