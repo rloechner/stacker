@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import ApplicationServices
 import UniformTypeIdentifiers
 
 struct MainWindowView: View {
@@ -74,6 +76,7 @@ struct MainWindowView: View {
     @State private var selectedInactiveWindows: [EditorWindowSnapshot] = []
     @State private var draggingLinkedWindowID: Int?
     @State private var adminRefreshWorkItem: DispatchWorkItem?
+    @State private var showAccessibilityOnboardingAlert = false
     private let settingsSelectionID = Int32.min
 
     var body: some View {
@@ -85,6 +88,7 @@ struct MainWindowView: View {
         }
         .frame(minWidth: 560, minHeight: 420)   // Tight utility size
         .onAppear {
+            presentAccessibilityOnboardingIfNeeded()
             scheduleAdminRefresh(delay: 0)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -118,10 +122,32 @@ struct MainWindowView: View {
             guard let snapshot = notification.object as? SidebarSnapshot else { return }
             apply(snapshot: snapshot)
         }
+        .alert("Enable Accessibility Access", isPresented: $showAccessibilityOnboardingAlert) {
+            Button("Open System Settings") {
+                openAccessibilitySettings()
+            }
+            Button("Not Now", role: .cancel) {}
+        } message: {
+            Text("Stacker needs Accessibility permission to inspect, focus, move, resize, and observe browser windows. Enable Stacker in System Settings > Privacy & Security > Accessibility.")
+        }
     }
 }
 
 private extension MainWindowView {
+    private func presentAccessibilityOnboardingIfNeeded() {
+        guard !AXIsProcessTrusted() else { return }
+
+        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        _ = AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
+
+        showAccessibilityOnboardingAlert = true
+    }
+
+    private func openAccessibilitySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     private var apps: [AppSnapshot] {
         let stackLookup = Dictionary(uniqueKeysWithValues: activeStacks.map { ($0.pid, $0) })
 
