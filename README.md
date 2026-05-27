@@ -6,9 +6,18 @@ Open two or more windows in a supported browser, turn on a stack, and use the at
 
 Stacker does not launch browsers, restore sessions, or manage every app on your Mac. It works with browser windows that are already open.
 
+## Download
+
+Stacker is freeware and open source.
+
+- Normal users: download the signed DMG from the latest GitHub Release, then drag `Stacker.app` to `/Applications`.
+- Developers: build from source with Xcode or `script/build_and_run.sh`.
+
+The public DMG should be Developer ID signed, notarized, and stapled before release. Until a GitHub Release has a DMG attached, build from source.
+
 ## Project Status
 
-Stacker is being released as a source-first, best-effort open-source project. The app builds and runs locally from source, but there is not yet a signed, notarized public binary. If you build it yourself, expect to grant macOS Accessibility permission and occasionally use the recovery controls for browser, sleep/wake, or display edge cases.
+Stacker is a best-effort open-source macOS utility. Expect to grant macOS Accessibility permission and occasionally use the recovery controls for browser, sleep/wake, or display edge cases.
 
 <img width="924" height="707" alt="Screenshot 2026-05-26 at 9 20 39 AM" src="https://github.com/user-attachments/assets/fd93ed68-9156-4440-8818-78533c990368" />
 
@@ -48,6 +57,7 @@ Each browser needs at least two normal open windows before Stacker can create a 
 
 - macOS 15.0 or newer
 - Accessibility permission for Stacker
+- Automation permission if macOS prompts for System Events access
 - A supported browser with at least two open windows
 - Xcode if building from source
 
@@ -58,10 +68,11 @@ Accessibility permission is required because Stacker needs to inspect, focus, mo
 1. Open two or more windows in a supported browser.
 2. Launch Stacker.
 3. Approve Accessibility permission when prompted.
-4. Return to Stacker after granting permission.
-5. Select a browser in the sidebar.
-6. Turn on the switcher.
-7. Use the attached widget, or macOS `Command-\`` window cycling, to switch between stacked windows.
+4. Approve Automation permission if macOS prompts for System Events access.
+5. Return to Stacker after granting permission.
+6. Select a browser in the sidebar.
+7. Turn on the switcher.
+8. Use the attached widget, or macOS `Command-\`` window cycling, to switch between stacked windows.
 
 If the browser list does not update after opening windows, use `Stacker > Hard Refresh Browsers`.
 
@@ -112,7 +123,7 @@ The menu bar extra provides quick access to:
 - Fullscreen browser windows are treated as recoverable stack members, but are not used for active widget anchoring in v1.0.
 - Browser Accessibility behavior can vary by browser version and macOS release.
 - Stacker does not save browser sessions or reopen closed windows.
-- Public binary distribution still requires proper signing, packaging, and notarization.
+- Unsigned or locally built copies may trigger extra macOS security prompts.
 
 ## Build From Source
 
@@ -139,9 +150,13 @@ script/build_and_run.sh --debug
 
 The helper builds into `/private/tmp/stacker-derived` with code signing disabled, then opens the app.
 
-## Release Plan
+## Releasing
 
-The first public release is source-first. A downloadable binary can come later after direct-distribution packaging is validated.
+Maintainers can create a signed, notarized DMG with:
+
+```sh
+script/release_dmg.sh
+```
 
 Before publishing a downloadable binary, validate:
 
@@ -151,7 +166,7 @@ Before publishing a downloadable binary, validate:
 - packaged `.dmg` or `.zip` install flow;
 - Accessibility permission onboarding on a clean Mac.
 
-For source-only use, the main remaining work is continued community QA across supported browsers and common display setups.
+See [docs/releasing.md](docs/releasing.md) for the full Developer ID release checklist.
 
 ## QA Checklist
 

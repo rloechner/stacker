@@ -35,8 +35,8 @@ Observed locally:
 - App Sandbox: disabled in the Xcode project
 - Hardened Runtime: enabled in the Xcode project
 - Entitlements file: `stacker/stacker.entitlements`
-- Release signing: no longer forced to ad hoc signing; direct distribution still requires a Developer ID archive/export
-- Local signing identities: `security find-identity -p codesigning -v` currently reports one valid Apple Development identity, but no Developer ID Application identity is installed.
+- Release signing: no longer forced to ad hoc signing; direct distribution uses a Developer ID archive/export
+- Local signing identities: `security find-identity -p codesigning -v` should report a valid Developer ID Application identity before release, for example `Developer ID Application: Ryan Loechner (44N969GC55)`.
 - Local signed Release artifact: builds and passes `codesign --verify --strict`, but it is signed with Apple Development, includes `com.apple.security.get-task-allow`, and is rejected by `spctl`. It is suitable for local testing only.
 - Automation usage string: present through generated Info.plist build setting
 - App icon: app icon PNGs are present in `Assets.xcassets/AppIcon.appiconset`, and Debug/Release builds generate `AppIcon.icns`.
@@ -110,8 +110,8 @@ Those claims imply reliability that macOS does not give a third-party utility.
 
 1. Runtime-test the sandbox experiment build and record which core operations fail.
 2. Add final app icon assets for all macOS icon sizes.
-3. Install a valid Developer ID Application signing identity.
-4. Build a notarization-ready Developer ID archive/export, then run `codesign`, `spctl`, notarization, and stapling validation on the exported artifact.
+3. Confirm a valid Developer ID Application signing identity is installed.
+4. Build a notarization-ready Developer ID archive/export with `script/release_dmg.sh`, then run `codesign`, `spctl`, notarization, and stapling validation on the exported artifact.
 5. Add a small XCTest target for stack/session logic that does not need to control real apps.
 6. Keep reducing the app UI/docs to live stacks only.
 7. Add a compatibility matrix and record known-good app/window combinations.
