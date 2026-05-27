@@ -1,22 +1,21 @@
 # Stacker
 
-Stacker is a native macOS utility that turns multiple open browser windows into one live window stack.
+**⬇️ [Download Stacker v1.0 for macOS (DMG)](https://github.com/rloechner/stacker/releases/download/v1.0/Stacker-1.0.dmg)**
 
-Open two or more windows in a supported browser, turn on a stack, and use the attached widget to switch between those windows without spreading them across your desktop.
+A tiny native macOS utility that turns multiple open browser windows into one live, aligned stack (with a handy widget for switching).
+
+**Installation (30 seconds):**
+1. Download the DMG above
+2. Open it and drag **Stacker** into your Applications folder
+3. Open Stacker → macOS will ask for Accessibility permission (System Settings → Privacy & Security → Accessibility → enable Stacker)
+
+Works with Chrome, Brave, Safari, Edge, Firefox, Orion, DuckDuckGo Browser (needs 2+ normal windows open).
+
+Signed and notarized for macOS Developer ID distribution.
+
+Stacker is freeware and open source. You can also browse [all GitHub Releases](https://github.com/rloechner/stacker/releases) or build from source with Xcode.
 
 Stacker does not launch browsers, restore sessions, or manage every app on your Mac. It works with browser windows that are already open.
-
-## Download
-
-Stacker is freeware and open source.
-
-- Download the latest signed DMG: [Stacker-1.0.dmg](https://github.com/rloechner/stacker/releases/latest/download/Stacker-1.0.dmg)
-- Or browse all releases: [GitHub Releases](https://github.com/rloechner/stacker/releases)
-- Developers can also build from source with Xcode or `script/build_and_run.sh`.
-
-To install, open the DMG and drag `Stacker.app` to `/Applications`.
-
-Stacker requires Accessibility permission because it inspects, focuses, moves, resizes, and observes browser windows. macOS may also ask for Automation permission when Stacker uses System Events as a fallback.
 
 <img width="924" height="707" alt="Screenshot 2026-05-26 at 9 20 39 AM" src="https://github.com/user-attachments/assets/fd93ed68-9156-4440-8818-78533c990368" />
 
