@@ -10,14 +10,13 @@ Stacker does not launch browsers, restore sessions, or manage every app on your 
 
 Stacker is freeware and open source.
 
-- Normal users: download the signed DMG from the latest GitHub Release, then drag `Stacker.app` to `/Applications`.
-- Developers: build from source with Xcode or `script/build_and_run.sh`.
+- Download the latest signed DMG: [Stacker-1.0.dmg](https://github.com/rloechner/stacker/releases/latest/download/Stacker-1.0.dmg)
+- Or browse all releases: [GitHub Releases](https://github.com/rloechner/stacker/releases)
+- Developers can also build from source with Xcode or `script/build_and_run.sh`.
 
-The public DMG should be Developer ID signed, notarized, and stapled before release. Until a GitHub Release has a DMG attached, build from source.
+To install, open the DMG and drag `Stacker.app` to `/Applications`.
 
-## Project Status
-
-Stacker is a best-effort open-source macOS utility. Expect to grant macOS Accessibility permission and occasionally use the recovery controls for browser, sleep/wake, or display edge cases.
+Stacker requires Accessibility permission because it inspects, focuses, moves, resizes, and observes browser windows. macOS may also ask for Automation permission when Stacker uses System Events as a fallback.
 
 <img width="924" height="707" alt="Screenshot 2026-05-26 at 9 20 39 AM" src="https://github.com/user-attachments/assets/fd93ed68-9156-4440-8818-78533c990368" />
 
@@ -125,7 +124,9 @@ The menu bar extra provides quick access to:
 - Stacker does not save browser sessions or reopen closed windows.
 - Unsigned or locally built copies may trigger extra macOS security prompts.
 
-## Build From Source
+## For Developers
+
+### Build From Source
 
 Build from the command line:
 
@@ -150,7 +151,7 @@ script/build_and_run.sh --debug
 
 The helper builds into `/private/tmp/stacker-derived` with code signing disabled, then opens the app.
 
-## Releasing
+### Releasing
 
 Maintainers can create a signed, notarized DMG with:
 
@@ -158,17 +159,9 @@ Maintainers can create a signed, notarized DMG with:
 script/release_dmg.sh
 ```
 
-Before publishing a downloadable binary, validate:
-
-- code signing;
-- hardened runtime settings;
-- notarization;
-- packaged `.dmg` or `.zip` install flow;
-- Accessibility permission onboarding on a clean Mac.
-
 See [docs/releasing.md](docs/releasing.md) for the full Developer ID release checklist.
 
-## QA Checklist
+### QA Checklist
 
 Recommended manual test pass before release:
 

@@ -52,7 +52,7 @@ The script will:
 - submit the DMG for notarization;
 - staple the notarization ticket;
 - validate the stapled DMG;
-- run a final Gatekeeper assessment.
+- verify the DMG and run a final Gatekeeper assessment against the mounted app.
 
 The script uses `/private/tmp/stacker-release-build` for temporary archive/export work and writes the output DMG to `dist/`.
 
@@ -66,10 +66,15 @@ Do not upload a `--skip-notarize` DMG as a public release.
 
 ## Manual Verification
 
-After the script succeeds, verify the output again:
+After the script succeeds, verify the output again by mounting the DMG and assessing the app:
 
 ```sh
-spctl -a -vv -t open dist/Stacker-*.dmg
+DMG="$(pwd)/dist/Stacker-1.0.dmg"
+MOUNT_DIR="$(mktemp -d /private/tmp/stacker-dmg-verify.XXXXXX)"
+hdiutil attach "$DMG" -readonly -nobrowse -mountpoint "$MOUNT_DIR"
+spctl -a -vv "$MOUNT_DIR/Stacker.app"
+codesign --verify --strict --verbose=2 "$MOUNT_DIR/Stacker.app"
+hdiutil detach "$MOUNT_DIR"
 ```
 
 Then test the DMG on a clean Mac or clean macOS user account:
