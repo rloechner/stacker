@@ -5,6 +5,7 @@ import ApplicationServices
 
 struct ContentView: View {
     let presentation: StackerPresentation
+    private let allowsModalAlerts: Bool
 
     @State private var workspaceController = StackerWorkspaceController()
     @State private var sessionStore = StackerSessionStore()
@@ -21,8 +22,9 @@ struct ContentView: View {
     @State private var isDisplayReconfigurationTransition = false
     @State private var displayReconfigurationWorkItem: DispatchWorkItem?
 
-    init(presentation: StackerPresentation = .window) {
+    init(presentation: StackerPresentation = .window, allowsModalAlerts: Bool = true) {
         self.presentation = presentation
+        self.allowsModalAlerts = allowsModalAlerts
     }
 
     private var eligibleApplications: [TargetApplication] {
@@ -196,7 +198,7 @@ struct ContentView: View {
             }
 
             .alert(isPresented: Binding(
-                get: { showAccessibilityAlert },
+                get: { allowsModalAlerts && showAccessibilityAlert },
                 set: { showAccessibilityAlert = $0 }
             )) {
                 Alert(
@@ -552,7 +554,7 @@ struct ContentView: View {
 
     private var errorAlertBinding: Binding<Bool> {
         Binding(
-            get: { errorMessage != nil },
+            get: { allowsModalAlerts && errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )
     }
@@ -1684,7 +1686,7 @@ struct ContentView: View {
         debugMessages = []
 
         guard let targetApplication else {
-            errorMessage = "No supported browser is available yet. Open at least two browser windows, then refresh Stacker."
+            appendDebug("No supported browser is available yet.")
             return
         }
 

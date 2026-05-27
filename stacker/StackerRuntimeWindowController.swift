@@ -8,7 +8,7 @@ final class StackerRuntimeWindowController {
     func startIfNeeded() {
         guard window == nil else { return }
 
-        let hostingView = NSHostingView(rootView: ContentView(presentation: .window))
+        let hostingView = NSHostingView(rootView: ContentView(presentation: .window, allowsModalAlerts: false))
         hostingView.sizingOptions = []
         hostingView.translatesAutoresizingMaskIntoConstraints = true
         hostingView.frame = NSRect(x: 0, y: 0, width: 1, height: 1)
