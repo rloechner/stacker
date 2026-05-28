@@ -27,6 +27,7 @@ extension Notification.Name {
     static let stackerDegradedStackCountDidChange = Notification.Name("stackerDegradedStackCountDidChange")
     static let stackerRetryDegradedStacks = Notification.Name("stackerRetryDegradedStacks")
     static let stackerAppWillTerminate = Notification.Name("stackerAppWillTerminate")
+    static let stackerAccessibilityTrustDidChange = Notification.Name("stackerAccessibilityTrustDidChange")
 }
 
 enum StackerPresentation {

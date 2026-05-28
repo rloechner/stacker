@@ -8,7 +8,8 @@ struct OverlayShortcutSettingsView: View {
     @AppStorage(StackOverlayAppearancePreference.key) private var widgetAppearanceRawValue = StackOverlayAppearance.system.rawValue
     @AppStorage(StackOverlayDotPalettePreference.key) private var dotPaletteRawValue = StackOverlayDotPalette.classic.rawValue
     @AppStorage(StackOverlayPlacementPreferenceStore.key) private var placementRawValue = StackOverlayPlacementPreference.top.rawValue
-    @State private var accessibilityTrusted = AXIsProcessTrusted()
+    @State private var accessibilityTrusted = AccessibilityPermissionSupport.isProcessTrusted
+    @State private var showPostUpdateAccessibilityHint = false
 
     private var modifierFlags: NSEvent.ModifierFlags {
         get { NSEvent.ModifierFlags(rawValue: UInt(modifiersRawValue)) }
@@ -61,6 +62,21 @@ struct OverlayShortcutSettingsView: View {
         .padding(18)
         .frame(maxWidth: 720, alignment: .topLeading)
         .onAppear {
+            refreshAccessibilityStatus()
+            showPostUpdateAccessibilityHint =
+                AccessibilityPermissionCoordinator.didUpgradeThisLaunch && !accessibilityTrusted
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .stackerAccessibilityTrustDidChange)) { notification in
+            if let trusted = notification.object as? Bool {
+                accessibilityTrusted = trusted
+            } else {
+                refreshAccessibilityStatus()
+            }
+            if accessibilityTrusted {
+                showPostUpdateAccessibilityHint = false
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshAccessibilityStatus()
         }
         .onChange(of: overlayHidden) { _, _ in
@@ -165,16 +181,30 @@ struct OverlayShortcutSettingsView: View {
     }
 
     private var accessibilityRow: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
-                accessibilityStatus
-                Spacer()
-                accessibilityButtons
+        VStack(alignment: .leading, spacing: 8) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    accessibilityStatus
+                    Spacer()
+                    accessibilityButtons
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    accessibilityStatus
+                    accessibilityButtons
+                }
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                accessibilityStatus
-                accessibilityButtons
+            if showPostUpdateAccessibilityHint {
+                Text(AccessibilityPermissionSupport.postUpdatePermissionGuidance)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let installGuidance = AccessibilityPermissionSupport.installLocationGuidance {
+                Text(installGuidance)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -192,11 +222,12 @@ struct OverlayShortcutSettingsView: View {
     private var accessibilityButtons: some View {
         HStack(spacing: 8) {
             Button("Open Settings") {
-                guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
-                NSWorkspace.shared.open(url)
+                AccessibilityPermissionSupport.openSystemSettings()
             }
 
             Button("Refresh") {
+                AccessibilityPermissionSupport.requestSystemPrompt()
+                _ = AccessibilityPermissionCoordinator.refreshTrustState()
                 refreshAccessibilityStatus()
             }
         }
@@ -307,7 +338,7 @@ struct OverlayShortcutSettingsView: View {
     }
 
     private func refreshAccessibilityStatus() {
-        accessibilityTrusted = AXIsProcessTrusted()
+        accessibilityTrusted = AccessibilityPermissionCoordinator.refreshTrustState(postOnChangeOnly: true)
     }
 }
 

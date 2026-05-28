@@ -1,13 +1,15 @@
 # Stacker
 
-**⬇️ [Download Stacker v1.0 for macOS (DMG)](https://github.com/rloechner/stacker/releases/download/v1.0/Stacker-1.0.dmg)**
+**⬇️ [Download Stacker v1.1 for macOS (DMG)](https://github.com/rloechner/stacker/releases/download/v1.1/Stacker-1.1.dmg)**
 
 A tiny native macOS utility that turns multiple open browser windows into one live, aligned stack (with a handy widget for switching).
 
 **Installation (30 seconds):**
 1. Download the DMG above
 2. Open it and drag **Stacker** into your Applications folder
-3. Open Stacker → macOS will ask for Accessibility permission (System Settings → Privacy & Security → Accessibility → enable Stacker)
+3. Open Stacker from Applications → macOS will ask for Accessibility permission (System Settings → Privacy & Security → Accessibility → enable Stacker)
+
+After updating, quit Stacker and toggle Accessibility off/on if macOS still shows permission enabled but Stacker does not detect it.
 
 Works with Chrome, Brave, Safari, Edge, Firefox, Orion, DuckDuckGo Browser (needs 2+ normal windows open).
 

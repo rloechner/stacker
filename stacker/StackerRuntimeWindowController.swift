@@ -46,8 +46,28 @@ final class StackerAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Task { @MainActor in
+            AccessibilityPermissionCoordinator.start()
+            _ = AccessibilityPermissionCoordinator.refreshTrustState()
+            presentInstallLocationWarningIfNeeded()
             runtimeWindowController.startIfNeeded()
         }
+    }
+
+    @MainActor
+    private func presentInstallLocationWarningIfNeeded() {
+        guard AccessibilityPermissionSupport.shouldPresentInstallLocationWarning(),
+              let guidance = AccessibilityPermissionSupport.installLocationGuidance else {
+            return
+        }
+
+        AccessibilityPermissionSupport.markInstallLocationWarningPresented()
+
+        let alert = NSAlert()
+        alert.messageText = "Install Stacker in Applications"
+        alert.informativeText = guidance
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     func applicationWillTerminate(_ notification: Notification) {

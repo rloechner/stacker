@@ -197,6 +197,15 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSWorkspace.didTerminateApplicationNotification)) { _ in
                 debounceLoadEligibleApplications()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .stackerAccessibilityTrustDidChange)) { _ in
+                refreshAccessibilityState()
+                if accessibilityTrusted {
+                    Task { @MainActor in
+                        await loadEligibleApplications()
+                        postSidebarSnapshot()
+                    }
+                }
+            }
             .alert(isPresented: Binding(
                 get: { allowsModalAlerts && showAccessibilityAlert },
                 set: { showAccessibilityAlert = $0 }
@@ -283,7 +292,8 @@ struct ContentView: View {
                 .controlSize(.small)
 
                 Button("Check Again") {
-                    accessibilityTrusted = workspaceController.isAccessibilityTrusted()
+                    AccessibilityPermissionSupport.requestSystemPrompt()
+                    refreshAccessibilityState()
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -642,12 +652,15 @@ struct ContentView: View {
     }
 
     private func refreshAccessibilityState() {
-        accessibilityTrusted = workspaceController.isAccessibilityTrusted()
+        workspaceController.syncAccessibilityTrustedState()
+        accessibilityTrusted = workspaceController.accessibilityTrusted
+        if accessibilityTrusted {
+            showAccessibilityAlert = false
+        }
     }
 
     private func openAccessibilitySettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
-        NSWorkspace.shared.open(url)
+        AccessibilityPermissionSupport.openSystemSettings()
     }
 
     private var currentStackSession: ActiveStackSession? {

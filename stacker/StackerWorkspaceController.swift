@@ -17,17 +17,20 @@ final class StackerWorkspaceController {
     var errorMessage: String?
     var debugMessages: [String] = []
     var hasRequestedAccessibilityPrompt = false
-    var accessibilityTrusted = AXIsProcessTrusted()
+    var accessibilityTrusted = AccessibilityPermissionSupport.isProcessTrusted
     var pendingAutoStackPID: pid_t?
     var frontmostEligiblePID: pid_t?
 
     func isAccessibilityTrusted() -> Bool {
-        AXIsProcessTrusted()
+        AccessibilityPermissionSupport.isProcessTrusted
+    }
+
+    func syncAccessibilityTrustedState() {
+        accessibilityTrusted = isAccessibilityTrusted()
     }
 
     func requestAccessibilityPrompt() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(options)
+        AccessibilityPermissionSupport.requestSystemPrompt()
     }
 
     func configureAccessibilityTimeout() {

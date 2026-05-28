@@ -92,7 +92,13 @@ struct MainWindowView: View {
             scheduleAdminRefresh(delay: 0)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            _ = AccessibilityPermissionCoordinator.refreshTrustState()
             scheduleAdminRefresh(delay: 0.15)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .stackerAccessibilityTrustDidChange)) { _ in
+            if AccessibilityPermissionSupport.isProcessTrusted {
+                showAccessibilityOnboardingAlert = false
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
             guard let window = notification.object as? NSWindow,
@@ -135,17 +141,15 @@ struct MainWindowView: View {
 
 private extension MainWindowView {
     private func presentAccessibilityOnboardingIfNeeded() {
-        guard !AXIsProcessTrusted() else { return }
+        _ = AccessibilityPermissionCoordinator.refreshTrustState()
+        guard !AccessibilityPermissionSupport.isProcessTrusted else { return }
 
-        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-        _ = AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
-
+        AccessibilityPermissionSupport.requestSystemPrompt()
         showAccessibilityOnboardingAlert = true
     }
 
     private func openAccessibilitySettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
-        NSWorkspace.shared.open(url)
+        AccessibilityPermissionSupport.openSystemSettings()
     }
 
     private var apps: [AppSnapshot] {
