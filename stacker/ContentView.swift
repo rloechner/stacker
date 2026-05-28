@@ -166,6 +166,7 @@ struct ContentView: View {
             }
             .onChange(of: targetPID) { _, _ in
                 postSidebarSnapshot()
+                startRefreshTimerIfNeeded()
             }
             .onReceive(NotificationCenter.default.publisher(for: .stackerOverlayPaletteDidChange)) { _ in
                 applyCurrentWidgetPalette()
@@ -196,7 +197,6 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSWorkspace.didTerminateApplicationNotification)) { _ in
                 debounceLoadEligibleApplications()
             }
-
             .alert(isPresented: Binding(
                 get: { allowsModalAlerts && showAccessibilityAlert },
                 set: { showAccessibilityAlert = $0 }
@@ -597,17 +597,19 @@ struct ContentView: View {
 
     private func startRefreshTimerIfNeeded() {
         stopRefreshTimer()
-        // Only auto-refresh the admin when it's the main window and a browser is selected
-        guard presentation == .window, targetPID != nil else { return }
+        guard targetPID != nil || !activeStackSessions.isEmpty else { return }
 
-        // Do an immediate refresh when the admin window becomes key
         Task { @MainActor in
             await loadEligibleApplications()
-            await loadFrontmostAppWindows()
+            await refreshActiveStackAvailableWindows()
+            if targetPID != nil {
+                await loadFrontmostAppWindows()
+            }
         }
 
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.8, repeats: true) { _ in
             Task { @MainActor in
+                await refreshActiveStackAvailableWindows()
                 if targetPID != nil {
                     await loadFrontmostAppWindows()
                 }
@@ -625,6 +627,7 @@ struct ContentView: View {
         let workItem = DispatchWorkItem {
             Task { @MainActor in
                 await loadEligibleApplications()
+                await refreshActiveStackAvailableWindows()
             }
         }
         eligibleRefreshWorkItem = workItem
@@ -749,6 +752,7 @@ struct ContentView: View {
         postActiveStackCount()
         postSidebarSnapshot()
         syncCombineOverlay()
+        startRefreshTimerIfNeeded()
     }
 
     private func removeCurrentStackSession(resetWindowOrder: Bool = true) {
@@ -802,6 +806,80 @@ struct ContentView: View {
 
     private func syncCurrentStackState() {
         sessionStore.syncCurrentStackState(targetPID: targetPID, availableWindows: &availableWindows)
+    }
+
+    @MainActor
+    private func refreshActiveStackAvailableWindows() async {
+        guard workspaceController.isAccessibilityTrusted(),
+              !activeStackSessions.isEmpty else {
+            return
+        }
+
+        var didChange = false
+        let discovery = WindowDiscoveryService(log: appendDebug)
+
+        for session in activeStackSessions where session.app.isSupportedBrowser {
+            guard NSRunningApplication(processIdentifier: session.app.processIdentifier) != nil else {
+                removeStackSession(for: session.app.processIdentifier)
+                didChange = true
+                continue
+            }
+
+            let refreshTarget = eligibleApplications.first(where: { $0.processIdentifier == session.app.processIdentifier })
+                ?? session.app
+            let outcome = await discovery.loadWindows(for: refreshTarget)
+
+            if let error = outcome.errorMessage,
+               WindowDiscoveryService.isTransientDiscoveryErrorForMessage(error) {
+                continue
+            }
+
+            let nextAvailableWindows = availableWindowsForSession(
+                session,
+                discoveredWindows: outcome.availableWindows
+            )
+
+            if !sameWindowChoices(session.availableWindowChoices, nextAvailableWindows) {
+                session.availableWindowChoices = nextAvailableWindows
+                refreshOverlay(for: session)
+                didChange = true
+            }
+
+            if targetPID == session.app.processIdentifier {
+                availableWindows = outcome.availableWindows
+                syncSelectionState()
+            }
+        }
+
+        if didChange {
+            postSidebarSnapshot()
+            syncCombineOverlay()
+        }
+    }
+
+    private func availableWindowsForSession(
+        _ session: ActiveStackSession,
+        discoveredWindows: [WindowChoice]
+    ) -> [WindowChoice] {
+        let groupedScriptIndices = Set(session.controller.groupedWindowChoices().compactMap(\.scriptIndex))
+
+        return discoveredWindows.filter { window in
+            if session.windowIDs.contains(window.id) {
+                return false
+            }
+
+            if let scriptIndex = window.scriptIndex,
+               groupedScriptIndices.contains(scriptIndex) {
+                return false
+            }
+
+            return true
+        }
+    }
+
+    private func sameWindowChoices(_ lhs: [WindowChoice], _ rhs: [WindowChoice]) -> Bool {
+        lhs.map(\.id) == rhs.map(\.id) &&
+        lhs.map(\.title) == rhs.map(\.title)
     }
 
     private func handleClosedWindows(for session: ActiveStackSession, remainingWindows: [WindowChoice]) {
@@ -1400,6 +1478,7 @@ struct ContentView: View {
             if !isDisplayReconfigurationTransition {
                 resumeReadyStacksAfterSystemWake()
                 startRefreshTimerIfNeeded()
+                schedulePostTransitionRecoveryPasses(reason: "system wake")
             }
         }
     }
@@ -1418,7 +1497,8 @@ struct ContentView: View {
         await loadEligibleApplications()
 
         for session in sessionsToRefresh {
-            guard let refreshedApp = eligibleApplications.first(where: { $0.processIdentifier == session.app.processIdentifier }) else {
+            guard let refreshedApp = eligibleApplications.first(where: { $0.processIdentifier == session.app.processIdentifier })
+                ?? refreshedRunningApplicationTarget(for: session.app) else {
                 removeStackSession(for: session.app.processIdentifier)
                 continue
             }
@@ -1434,6 +1514,8 @@ struct ContentView: View {
                 if let error = outcome.errorMessage,
                    WindowDiscoveryService.isTransientDiscoveryErrorForMessage(error) {
                     markStackDegraded(for: session.app.processIdentifier, reason: error)
+                } else if reason == "display reconfiguration" {
+                    markStackDegraded(for: session.app.processIdentifier, reason: "Waiting for browser windows to settle after display reconfiguration.")
                 } else {
                     removeStackSession(for: session.app.processIdentifier)
                 }
@@ -1473,6 +1555,21 @@ struct ContentView: View {
         postSidebarSnapshot()
     }
 
+    private func refreshedRunningApplicationTarget(for app: TargetApplication) -> TargetApplication? {
+        guard let runningApplication = NSRunningApplication(processIdentifier: app.processIdentifier),
+              BrowserSupport.isSupportedBrowser(runningApplication) else {
+            return nil
+        }
+
+        let scriptWindowCount = WindowScriptBridge.windowCount(forProcessIdentifier: app.processIdentifier) ?? 0
+        return TargetApplication(
+            name: runningApplication.localizedName ?? app.name,
+            bundleIdentifier: runningApplication.bundleIdentifier ?? app.bundleIdentifier,
+            processIdentifier: app.processIdentifier,
+            windowCount: max(scriptWindowCount, app.windowCount)
+        )
+    }
+
     private func handleDisplayReconfiguration() {
         let wasTransitioning = isDisplayReconfigurationTransition
         isDisplayReconfigurationTransition = true
@@ -1494,19 +1591,38 @@ struct ContentView: View {
         let workItem = DispatchWorkItem {
             Task { @MainActor in
                 guard isDisplayReconfigurationTransition else { return }
-                appendDebug("Display reconfiguration settled; refreshing browser windows.")
+            appendDebug("Display reconfiguration settled; refreshing browser windows.")
                 try? await Task.sleep(for: .milliseconds(1200))
                 await refreshBrowserSessionsAfterSystemTransition(reason: "display reconfiguration")
                 isDisplayReconfigurationTransition = false
                 if !isSystemPowerTransition {
                     resumeReadyStacksAfterSystemWake()
                     startRefreshTimerIfNeeded()
+                    schedulePostTransitionRecoveryPasses(reason: "display reconfiguration")
                 }
             }
         }
 
         displayReconfigurationWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: workItem)
+    }
+
+    private func schedulePostTransitionRecoveryPasses(reason: String) {
+        for delay in [1.5, 3.5, 6.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                Task { @MainActor in
+                    guard !isSystemPowerTransition,
+                          !isDisplayReconfigurationTransition else {
+                        return
+                    }
+
+                    appendDebug("Running follow-up \(reason) window refresh.")
+                    await refreshBrowserSessionsAfterSystemTransition(reason: reason)
+                    resumeReadyStacksAfterSystemWake()
+                    await refreshActiveStackAvailableWindows()
+                }
+            }
+        }
     }
 
     private func pauseStackForSystemPowerTransition(_ session: ActiveStackSession, reason: String) {
@@ -1635,16 +1751,12 @@ struct ContentView: View {
                 titles: session.availableWindowChoices.map(\.title).prefix(5).map { $0 }
             ),
             frameProvider: { [session] in
-                guard let focusedWindow = StackOverlayTargeting.focusedAddBackWindow(in: session) else { return nil }
-                return StackOverlayTargeting.focusedFrameForWindowChoice(
-                    focusedWindow,
-                    appPID: session.app.processIdentifier,
-                    appName: session.app.name
-                )
+                guard let addBackWindow = StackOverlayTargeting.preferredAddBackWindow(in: session) else { return nil }
+                return StackOverlayTargeting.frameForWindowChoice(addBackWindow, appPID: session.app.processIdentifier)
             }
         ) { [session] in
-            guard let focusedWindow = StackOverlayTargeting.focusedAddBackWindow(in: session) else { return }
-            addWindowToSession(for: session.app.processIdentifier, id: focusedWindow.id)
+            guard let addBackWindow = StackOverlayTargeting.preferredAddBackWindow(in: session) else { return }
+            addWindowToSession(for: session.app.processIdentifier, id: addBackWindow.id)
         }
     }
 
@@ -1696,6 +1808,15 @@ struct ContentView: View {
         availableWindows = outcome.availableWindows
         syncSelectionState()
         isSelectingWindows = outcome.shouldEnterSelectionMode
+        if let session = activeStackSessions.first(where: { $0.app.processIdentifier == targetApplication.processIdentifier }) {
+            let nextAvailableWindows = availableWindowsForSession(session, discoveredWindows: outcome.availableWindows)
+            if !sameWindowChoices(session.availableWindowChoices, nextAvailableWindows) {
+                session.availableWindowChoices = nextAvailableWindows
+                refreshOverlay(for: session)
+                postSidebarSnapshot()
+                syncCombineOverlay()
+            }
+        }
 
         if let error = outcome.errorMessage {
             let isTransient = WindowDiscoveryService.isTransientDiscoveryErrorForMessage(error)

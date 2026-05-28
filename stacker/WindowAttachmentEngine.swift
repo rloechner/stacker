@@ -138,6 +138,17 @@ struct WindowAttachmentEngine {
             )
         }
 
+        guard hasVisibleRoomForWidget(anchorFrame: anchorFrame, visibleFrame: visibleFrame, panelSize: panelSize) else {
+            return StackOverlayResolvedAttachment(
+                health: .hidden,
+                anchorFrame: anchorFrame,
+                visibleFrame: visibleFrame,
+                origin: nil,
+                dockPosition: fallbackDockPosition,
+                horizontalSide: .left
+            )
+        }
+
         let dockPosition = resolvedDockPosition(
             for: anchorFrame,
             visibleFrame: visibleFrame,
@@ -240,6 +251,26 @@ struct WindowAttachmentEngine {
         // Require roughly 1.7x the widget's own height of vertical travel.
         // This catches "full height or nearly full height" browser windows.
         return verticalTravel >= panelSize.height * 1.7
+    }
+
+    private func hasVisibleRoomForWidget(anchorFrame: CGRect, visibleFrame: CGRect, panelSize: CGSize) -> Bool {
+        let availableTop = visibleFrame.maxY - anchorFrame.maxY
+        let availableBottom = anchorFrame.minY - visibleFrame.minY
+        let availableLeft = anchorFrame.minX - visibleFrame.minX
+        let availableRight = visibleFrame.maxX - anchorFrame.maxX
+        let sideRailViable = isSideRailViable(for: anchorFrame, visibleFrame: visibleFrame, panelSize: panelSize)
+
+        if availableTop >= panelSize.height + topGap {
+            return true
+        }
+        if availableBottom >= panelSize.height + bottomGap {
+            return true
+        }
+        if sideRailViable,
+           availableLeft >= panelSize.width + sideGap || availableRight >= panelSize.width + sideGap {
+            return true
+        }
+        return false
     }
 
     private func resolvedDockPosition(

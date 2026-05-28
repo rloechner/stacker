@@ -3,10 +3,32 @@ import CoreGraphics
 
 @MainActor
 enum StackOverlayTargeting {
+    static func preferredAddBackWindow(in session: ActiveStackSession) -> WindowChoice? {
+        focusedAddBackWindow(in: session) ??
+        session.availableWindowChoices.first {
+            frameForWindowChoice($0, appPID: session.app.processIdentifier) != nil
+        }
+    }
+
     static func focusedAddBackWindow(in session: ActiveStackSession) -> WindowChoice? {
         session.availableWindowChoices.first {
             focusedFrameForWindowChoice($0, appPID: session.app.processIdentifier, appName: session.app.name) != nil
         }
+    }
+
+    static func frameForWindowChoice(_ window: WindowChoice, appPID: pid_t) -> CGRect? {
+        if let axWindow = window.window,
+           let position = axWindow.position,
+           let size = axWindow.size {
+            return CGRect(origin: position, size: size)
+        }
+
+        if let scriptIndex = window.scriptIndex,
+           let state = WindowScriptBridge.fetchWindows(forProcessIdentifier: appPID, windowIndices: [scriptIndex]).first {
+            return state.frame
+        }
+
+        return nil
     }
 
     static func focusedFrameForWindowChoice(_ window: WindowChoice, appPID: pid_t, appName: String) -> CGRect? {

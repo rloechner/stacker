@@ -94,12 +94,31 @@ private final class PanelAnchorDragHandleView: NSView {
     private var dragStartScreenPoint: NSPoint?
     private var didDrag = false
 
+    override var isOpaque: Bool { false }
     override var acceptsFirstResponder: Bool { false }
     override var isFlipped: Bool { true }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configureTransparency()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        configureTransparency()
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard bounds.contains(point) else {
             return nil
+        }
+        if let event = NSApp.currentEvent {
+            switch event.type {
+            case .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp:
+                return nil
+            default:
+                break
+            }
         }
         if excludedRects.contains(where: { $0.insetBy(dx: -4, dy: -4).contains(point) }) {
             return nil
@@ -143,6 +162,22 @@ private final class PanelAnchorDragHandleView: NSView {
             return window.convertPoint(toScreen: event.locationInWindow)
         }
         return event.locationInWindow
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        configureTransparency()
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.clear.setFill()
+        dirtyRect.fill()
+    }
+
+    private func configureTransparency() {
+        wantsLayer = true
+        layer?.isOpaque = false
+        layer?.backgroundColor = NSColor.clear.cgColor
     }
 }
 
@@ -228,7 +263,17 @@ private struct CombineOverlayView: View {
     let onDragChanged: (CGSize) -> Void
     let onDragEnded: () -> Void
 
+    @ViewBuilder
     var body: some View {
+        switch style {
+        case .createStack:
+            createStackPrompt
+        case .addBack:
+            addBackPrompt
+        }
+    }
+
+    private var createStackPrompt: some View {
         ZStack {
             Capsule(style: .continuous)
                 .fill(.regularMaterial)
@@ -298,17 +343,6 @@ private struct CombineOverlayView: View {
                         )
                 }
 
-                // For Add Back, show a mini dot strip to resemble the main widget
-                if case .addBack(let titles) = style, titles.count > 1 {
-                    HStack(spacing: 4) {
-                        ForEach(Array(titles.prefix(4)), id: \.self) { _ in
-                            Circle()
-                                .fill(Color.accentColor.opacity(0.85))
-                                .frame(width: 6, height: 6)
-                        }
-                    }
-                    .padding(.leading, 4)
-                }
             }
             .allowsHitTesting(false)
             .padding(.horizontal, 12)
@@ -320,6 +354,56 @@ private struct CombineOverlayView: View {
         )
         .contentShape(Capsule(style: .continuous))
         .help(secondaryTitle)
+    }
+
+    private var addBackPrompt: some View {
+        ZStack {
+            Circle()
+                .fill(Color.black.opacity(0.14))
+                .frame(width: 30, height: 30)
+                .blur(radius: 5)
+                .offset(y: 2)
+                .allowsHitTesting(false)
+
+            Circle()
+                .fill(Color.accentColor.opacity(0.12))
+                .frame(width: 28, height: 28)
+                .blur(radius: 7)
+                .offset(y: 3)
+                .allowsHitTesting(false)
+
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [Color.white, Color(red: 0.95, green: 0.97, blue: 1.0)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 36, height: 36)
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.accentColor.opacity(0.50), lineWidth: 1)
+                )
+
+            PanelAnchorDragHandle(
+                onTap: { _ in onTap() },
+                onDragChanged: onDragChanged,
+                onDragEnded: onDragEnded,
+                excludedRects: []
+            )
+            .frame(width: 36, height: 36)
+            .clipShape(Circle())
+
+            Image(systemName: "plus")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Color.accentColor)
+                .allowsHitTesting(false)
+        }
+        .frame(width: 42, height: 42)
+        .contentShape(Circle())
+        .help("Add to stack")
+        .accessibilityLabel("Add to stack")
     }
 
     private var leadingSymbol: String {
@@ -354,11 +438,8 @@ private struct CombineOverlayView: View {
         case .createStack(let windowCount):
             return "Link \(windowCount) open browser windows"
         case .addBack(let titles):
-            if titles.count == 1 {
-                return "Add \(titles[0]) back into this stack"
-            } else {
-                return "Add any of these \(titles.count) windows back into the stack"
-            }
+            _ = titles
+            return "Add to stack"
         }
     }
 }
@@ -617,7 +698,7 @@ private func configureOverlayPanel(_ panel: NSPanel) {
     panel.isOpaque = false
     panel.hasShadow = false
     panel.hidesOnDeactivate = false
-    panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    panel.collectionBehavior = [.canJoinAllSpaces]
     panel.becomesKeyOnlyIfNeeded = true
     panel.ignoresMouseEvents = false
     panel.isMovableByWindowBackground = false
@@ -1546,24 +1627,32 @@ private struct StackOverlayStripView: View {
     @ViewBuilder
     private func windowContextMenu(for item: StackOverlayItem) -> some View {
         if item.windowState == .minimized {
-            Button("Restore Window") {
+            Button {
                 onRestore(item.id)
+            } label: {
+                Label("Restore Window", systemImage: "arrow.up.left.and.arrow.down.right")
             }
         } else {
-            Button("Minimize Window") {
+            Button {
                 onMinimize(item.id)
+            } label: {
+                Label("Minimize Window", systemImage: "minus.circle")
             }
             .disabled(item.windowState == .fullscreen)
         }
 
-        Button("Focus Window") {
+        Button {
             onSelect(item.id)
+        } label: {
+            Label("Focus Window", systemImage: "macwindow")
         }
 
         Divider()
 
-        Button("Remove from Stack", role: .destructive) {
+        Button(role: .destructive) {
             triggerRemovalAnimation(for: item)
+        } label: {
+            Label("Remove from Stack", systemImage: "xmark.circle")
         }
     }
 
@@ -3260,6 +3349,14 @@ final class StackOverlayPanelController {
             return
         }
 
+        if let anchorFrame = resolvedAttachment.anchorFrame,
+           isCoveredByHigherWindow(anchorFrame: anchorFrame, panelFrame: CGRect(origin: origin, size: panel.frame.size)) {
+            updateHealth(.hidden)
+            controlsPanel.orderOut(nil)
+            panel.orderOut(nil)
+            return
+        }
+
         if isDraggingBackground {
             syncControlsPanelVisibility()
             panel.orderFrontRegardless()
@@ -3682,6 +3779,109 @@ final class StackOverlayPanelController {
             x: min(max(origin.x, visibleFrame.minX + edgeInset), visibleFrame.maxX - controlsSize.width - edgeInset),
             y: min(max(origin.y, visibleFrame.minY + edgeInset), visibleFrame.maxY - controlsSize.height - edgeInset)
         )
+    }
+
+    private func isCoveredByHigherWindow(anchorFrame: CGRect, panelFrame: CGRect) -> Bool {
+        guard let windowList = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else {
+            return false
+        }
+
+        let currentPID = NSRunningApplication.current.processIdentifier
+        for windowInfo in windowList {
+            guard let ownerPID = pidValue(from: windowInfo[kCGWindowOwnerPID as String]),
+                  ownerPID != currentPID,
+                  intValue(from: windowInfo[kCGWindowLayer as String]) == 0,
+                  let windowFrame = appKitFrame(fromCGWindowInfo: windowInfo),
+                  windowFrame.width > 24,
+                  windowFrame.height > 24 else {
+                continue
+            }
+
+            if ownerPID == appPID && approximatelyMatches(windowFrame, anchorFrame) {
+                return false
+            }
+
+            if windowFrame.intersects(panelFrame) ||
+                intersectionArea(windowFrame, anchorFrame) > anchorFrameArea(anchorFrame) * 0.1 ||
+                isFullscreenLike(windowFrame, near: anchorFrame) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private func appKitFrame(fromCGWindowInfo windowInfo: [String: Any]) -> CGRect? {
+        guard let bounds = windowInfo[kCGWindowBounds as String] as? NSDictionary,
+              let rawFrame = CGRect(dictionaryRepresentation: bounds) else {
+            return nil
+        }
+
+        let primaryMaxY = NSScreen.screens.first(where: { $0.frame.origin == .zero })?.frame.maxY
+            ?? NSScreen.main?.frame.maxY
+            ?? NSScreen.screens.map(\.frame.maxY).max()
+            ?? 0
+
+        return CGRect(
+            x: rawFrame.origin.x,
+            y: primaryMaxY - rawFrame.origin.y - rawFrame.height,
+            width: rawFrame.width,
+            height: rawFrame.height
+        )
+    }
+
+    private func approximatelyMatches(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
+        abs(lhs.minX - rhs.minX) <= 12 &&
+        abs(lhs.minY - rhs.minY) <= 12 &&
+        abs(lhs.width - rhs.width) <= 24 &&
+        abs(lhs.height - rhs.height) <= 24
+    }
+
+    private func intersectionArea(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
+        let intersection = lhs.intersection(rhs)
+        return max(0, intersection.width) * max(0, intersection.height)
+    }
+
+    private func anchorFrameArea(_ frame: CGRect) -> CGFloat {
+        max(1, frame.width * frame.height)
+    }
+
+    private func isFullscreenLike(_ frame: CGRect, near anchorFrame: CGRect) -> Bool {
+        guard let screen = NSScreen.screens.first(where: { $0.frame.intersects(frame) && $0.frame.intersects(anchorFrame) })
+            ?? NSScreen.screens.first(where: { $0.visibleFrame.intersects(frame) && $0.visibleFrame.intersects(anchorFrame) }) else {
+            return false
+        }
+
+        let screenArea = screen.frame.width * screen.frame.height
+        let intersection = frame.intersection(screen.frame)
+        let intersectionArea = max(0, intersection.width) * max(0, intersection.height)
+        return screenArea > 0 && intersectionArea / screenArea > 0.9
+    }
+
+    private func pidValue(from value: Any?) -> pid_t? {
+        if let pid = value as? pid_t {
+            return pid
+        }
+        if let number = value as? NSNumber {
+            return pid_t(number.int32Value)
+        }
+        if let intValue = value as? Int {
+            return pid_t(intValue)
+        }
+        return nil
+    }
+
+    private func intValue(from value: Any?) -> Int? {
+        if let intValue = value as? Int {
+            return intValue
+        }
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        return nil
     }
 
     private var isTargetContextFrontmost: Bool {
@@ -4122,15 +4322,11 @@ final class CombineOverlayPanelController {
                 self?.handleBackgroundDragEnded()
             }
         )
+        resizePanelToFitContent()
         startTracking(frameProvider: frameProvider)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.hostingView.invalidateIntrinsicContentSize()
-            self.hostingView.layoutSubtreeIfNeeded()
-            let fittingSize = self.hostingView.fittingSize
-            if self.panel.contentRect(forFrameRect: self.panel.frame).size != fittingSize {
-                self.panel.setContentSize(fittingSize)
-            }
+            self.resizePanelToFitContent()
             self.invalidatePanelRendering()
             self.syncVisibility()
         }
@@ -4192,6 +4388,12 @@ final class CombineOverlayPanelController {
         isUpdatingPosition = true
         panel.setFrameOrigin(origin)
         isUpdatingPosition = false
+
+        if isCoveredByHigherWindow(anchorFrame: anchorFrame, panelFrame: CGRect(origin: origin, size: panel.frame.size)) {
+            panel.orderOut(nil)
+            return
+        }
+
         panel.orderFrontRegardless()
     }
 
@@ -4283,6 +4485,109 @@ final class CombineOverlayPanelController {
             ?? NSScreen.main
     }
 
+    private func isCoveredByHigherWindow(anchorFrame: CGRect, panelFrame: CGRect) -> Bool {
+        guard let windowList = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else {
+            return false
+        }
+
+        let currentPID = NSRunningApplication.current.processIdentifier
+        for windowInfo in windowList {
+            guard let ownerPID = pidValue(from: windowInfo[kCGWindowOwnerPID as String]),
+                  ownerPID != currentPID,
+                  intValue(from: windowInfo[kCGWindowLayer as String]) == 0,
+                  let windowFrame = appKitFrame(fromCGWindowInfo: windowInfo),
+                  windowFrame.width > 24,
+                  windowFrame.height > 24 else {
+                continue
+            }
+
+            if ownerPID == appPID && approximatelyMatches(windowFrame, anchorFrame) {
+                return false
+            }
+
+            if windowFrame.intersects(panelFrame) ||
+                intersectionArea(windowFrame, anchorFrame) > anchorFrameArea(anchorFrame) * 0.1 ||
+                isFullscreenLike(windowFrame, near: anchorFrame) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private func appKitFrame(fromCGWindowInfo windowInfo: [String: Any]) -> CGRect? {
+        guard let bounds = windowInfo[kCGWindowBounds as String] as? NSDictionary,
+              let rawFrame = CGRect(dictionaryRepresentation: bounds) else {
+            return nil
+        }
+
+        let primaryMaxY = NSScreen.screens.first(where: { $0.frame.origin == .zero })?.frame.maxY
+            ?? NSScreen.main?.frame.maxY
+            ?? NSScreen.screens.map(\.frame.maxY).max()
+            ?? 0
+
+        return CGRect(
+            x: rawFrame.origin.x,
+            y: primaryMaxY - rawFrame.origin.y - rawFrame.height,
+            width: rawFrame.width,
+            height: rawFrame.height
+        )
+    }
+
+    private func approximatelyMatches(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
+        abs(lhs.minX - rhs.minX) <= 12 &&
+        abs(lhs.minY - rhs.minY) <= 12 &&
+        abs(lhs.width - rhs.width) <= 24 &&
+        abs(lhs.height - rhs.height) <= 24
+    }
+
+    private func intersectionArea(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
+        let intersection = lhs.intersection(rhs)
+        return max(0, intersection.width) * max(0, intersection.height)
+    }
+
+    private func anchorFrameArea(_ frame: CGRect) -> CGFloat {
+        max(1, frame.width * frame.height)
+    }
+
+    private func isFullscreenLike(_ frame: CGRect, near anchorFrame: CGRect) -> Bool {
+        guard let screen = NSScreen.screens.first(where: { $0.frame.intersects(frame) && $0.frame.intersects(anchorFrame) })
+            ?? NSScreen.screens.first(where: { $0.visibleFrame.intersects(frame) && $0.visibleFrame.intersects(anchorFrame) }) else {
+            return false
+        }
+
+        let screenArea = screen.frame.width * screen.frame.height
+        let intersection = frame.intersection(screen.frame)
+        let intersectionArea = max(0, intersection.width) * max(0, intersection.height)
+        return screenArea > 0 && intersectionArea / screenArea > 0.9
+    }
+
+    private func pidValue(from value: Any?) -> pid_t? {
+        if let pid = value as? pid_t {
+            return pid
+        }
+        if let number = value as? NSNumber {
+            return pid_t(number.int32Value)
+        }
+        if let intValue = value as? Int {
+            return pid_t(intValue)
+        }
+        return nil
+    }
+
+    private func intValue(from value: Any?) -> Int? {
+        if let intValue = value as? Int {
+            return intValue
+        }
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        return nil
+    }
+
     private func installDisplayChangeObservers() {
         let notificationCenter = NotificationCenter.default
         let handler: (Notification) -> Void = { [weak self] _ in
@@ -4327,12 +4632,7 @@ final class CombineOverlayPanelController {
             needsReanchorAfterScreenChange = false
         }
 
-        hostingView.invalidateIntrinsicContentSize()
-        hostingView.layoutSubtreeIfNeeded()
-        let fittingSize = hostingView.fittingSize
-        if panel.contentRect(forFrameRect: panel.frame).size != fittingSize {
-            panel.setContentSize(fittingSize)
-        }
+        resizePanelToFitContent()
         invalidatePanelRendering()
         syncVisibility()
 
@@ -4361,5 +4661,16 @@ final class CombineOverlayPanelController {
         syncBackingScale(for: panel)
         syncBackingScale(in: containerView)
         syncBackingScale(in: hostingView)
+    }
+
+    private func resizePanelToFitContent() {
+        hostingView.invalidateIntrinsicContentSize()
+        hostingView.layoutSubtreeIfNeeded()
+        let fittingSize = hostingView.fittingSize
+        if panel.contentRect(forFrameRect: panel.frame).size != fittingSize {
+            panel.setContentSize(fittingSize)
+        }
+        containerView.setFrameSize(fittingSize)
+        hostingView.setFrameSize(fittingSize)
     }
 }
