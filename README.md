@@ -1,6 +1,6 @@
 # Stacker
 
-**⬇️ [Download Stacker v1.1 for macOS (DMG)](https://github.com/rloechner/stacker/releases/download/v1.1/Stacker-1.1.dmg)**
+**⬇️ [Download Stacker v1.1.1 for macOS (DMG)](https://github.com/rloechner/stacker/releases/download/v1.1.1/Stacker-1.1.1.dmg)**
 
 A tiny native macOS utility that turns multiple open browser windows into one live, aligned stack (with a handy widget for switching).
 
