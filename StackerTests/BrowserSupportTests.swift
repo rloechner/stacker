@@ -30,6 +30,10 @@ final class BrowserSupportTests: XCTestCase {
             BrowserSupport.browser(bundleIdentifier: "company.thebrowser.dia", name: nil),
             .dia
         )
+        XCTAssertEqual(
+            BrowserSupport.browser(bundleIdentifier: "com.vivaldi.Vivaldi", name: nil),
+            .vivaldi
+        )
         XCTAssertNil(BrowserSupport.browser(bundleIdentifier: "com.unknown.App", name: nil))
     }
 
@@ -54,6 +58,10 @@ final class BrowserSupportTests: XCTestCase {
         XCTAssertEqual(
             BrowserSupport.browser(bundleIdentifier: nil, name: "Dia"),
             .dia
+        )
+        XCTAssertEqual(
+            BrowserSupport.browser(bundleIdentifier: nil, name: "Vivaldi"),
+            .vivaldi
         )
         XCTAssertNil(BrowserSupport.browser(bundleIdentifier: nil, name: "Random App"))
     }

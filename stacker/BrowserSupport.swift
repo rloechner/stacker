@@ -10,6 +10,7 @@ enum BrowserSupport {
         case orion
         case duckDuckGo
         case dia
+        case vivaldi
 
         var bundleIdentifier: String {
             bundleIdentifiers[0]
@@ -33,6 +34,8 @@ enum BrowserSupport {
                 return ["com.duckduckgo.macos.browser"]
             case .dia:
                 return ["company.thebrowser.dia"]
+            case .vivaldi:
+                return ["com.vivaldi.Vivaldi"]
             }
         }
 
@@ -54,6 +57,8 @@ enum BrowserSupport {
                 return "DuckDuckGo"
             case .dia:
                 return "Dia"
+            case .vivaldi:
+                return "Vivaldi"
             }
         }
 
@@ -75,6 +80,8 @@ enum BrowserSupport {
                 return "DuckDuckGo"
             case .dia:
                 return "Dia"
+            case .vivaldi:
+                return "Vivaldi"
             }
         }
 
@@ -96,6 +103,8 @@ enum BrowserSupport {
                 return ["duckduckgo", "duckduckgo browser", "duckduckgo private browser"]
             case .dia:
                 return ["dia", "dia browser"]
+            case .vivaldi:
+                return ["vivaldi", "vivaldi browser"]
             }
         }
     }
