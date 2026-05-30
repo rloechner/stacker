@@ -80,6 +80,8 @@ enum OverlayShortcutState {
         if UserDefaults.standard.object(forKey: StackOverlayPlacementPreferenceStore.key) == nil {
             StackOverlayPlacementPreferenceStore.set(.left)
         }
+
+        StackJumpShortcutState.ensureDefaults()
     }
 
     static func isHidden() -> Bool {

@@ -15,6 +15,7 @@ struct StackerSidebarEventHandlers {
     let onAddWindowToStack: (_ pid: pid_t, _ windowID: UInt) -> Void
     let onRemoveWindowFromStack: (_ pid: pid_t, _ windowID: UInt) -> Void
     let onFocusApplicationStack: (pid_t) -> Void
+    let onFocusWindowInStack: (_ pid: pid_t, _ windowID: UInt) -> Void
     let onResetApplicationOverlayPosition: (pid_t) -> Void
 }
 
@@ -156,6 +157,11 @@ final class StackerEventCoordinator {
             observe(.stackerFocusApplicationStack) { notification in
                 guard let pid = notification.userInfo?["pid"] as? Int32 else { return }
                 handlers.onFocusApplicationStack(pid)
+            },
+            observe(.stackerFocusWindowInStack) { notification in
+                guard let pid = notification.userInfo?["pid"] as? Int32,
+                      let windowID = notification.userInfo?["windowID"] as? Int else { return }
+                handlers.onFocusWindowInStack(pid, UInt(windowID))
             },
             observe(.stackerResetApplicationOverlayPosition) { notification in
                 guard let pid = notification.userInfo?["pid"] as? Int32 else { return }

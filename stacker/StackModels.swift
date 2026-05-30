@@ -14,6 +14,7 @@ extension Notification.Name {
     static let stackerAddWindowToStack = Notification.Name("stackerAddWindowToStack")
     static let stackerRemoveWindowFromStack = Notification.Name("stackerRemoveWindowFromStack")
     static let stackerFocusApplicationStack = Notification.Name("stackerFocusApplicationStack")
+    static let stackerFocusWindowInStack = Notification.Name("stackerFocusWindowInStack")
     static let stackerRefreshApplications = Notification.Name("stackerRefreshApplications")
     static let stackerReadSelectedWindows = Notification.Name("stackerReadSelectedWindows")
     static let stackerResetSelectedStack = Notification.Name("stackerResetSelectedStack")

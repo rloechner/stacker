@@ -138,44 +138,60 @@ struct ContentView: View {
             }
             .onChange(of: selectedTargetPID) { _, newValue in
                 guard let newValue else { return }
-                prepareForTargetSwitch(to: newValue)
-                workflowCoordinator.handleSelectedTargetChange(
-                    newValue: newValue,
-                    eligibleApplications: eligibleApplications,
-                    pendingAutoStackPID: pendingAutoStackPID,
-                    setTargetApplication: { targetApplication = $0 },
-                    setAppName: { appName = $0 },
-                    setTargetPID: { targetPID = $0 },
-                    syncCurrentStackState: syncCurrentStackState,
-                    loadFrontmostAppWindows: loadFrontmostAppWindows,
-                    clearPendingAutoStackPID: { pendingAutoStackPID = nil },
-                    autoStackLoadedWindows: autoStackLoadedWindows
-                )
+                DispatchQueue.main.async {
+                    prepareForTargetSwitch(to: newValue)
+                    workflowCoordinator.handleSelectedTargetChange(
+                        newValue: newValue,
+                        eligibleApplications: eligibleApplications,
+                        pendingAutoStackPID: pendingAutoStackPID,
+                        setTargetApplication: { targetApplication = $0 },
+                        setAppName: { appName = $0 },
+                        setTargetPID: { targetPID = $0 },
+                        syncCurrentStackState: syncCurrentStackState,
+                        loadFrontmostAppWindows: loadFrontmostAppWindows,
+                        clearPendingAutoStackPID: { pendingAutoStackPID = nil },
+                        autoStackLoadedWindows: autoStackLoadedWindows
+                    )
+                }
             }
-            .onChange(of: groupedTitles) { _, newValue in
-                postSidebarSnapshot()
+            .onChange(of: groupedTitles) { _, _ in
+                DispatchQueue.main.async {
+                    postSidebarSnapshot()
+                }
             }
             .onChange(of: activeStackSessions.count) { _, _ in
-                postActiveStackCount()
-                postSidebarSnapshot()
-                syncCombineOverlay()
+                DispatchQueue.main.async {
+                    postActiveStackCount()
+                    postSidebarSnapshot()
+                    syncCombineOverlay()
+                }
             }
             .onChange(of: eligibleApplications) { _, _ in
-                postSidebarSnapshot()
-                syncCombineOverlay()
+                DispatchQueue.main.async {
+                    postSidebarSnapshot()
+                    syncCombineOverlay()
+                }
             }
             .onChange(of: targetPID) { _, _ in
-                postSidebarSnapshot()
-                startRefreshTimerIfNeeded()
+                DispatchQueue.main.async {
+                    postSidebarSnapshot()
+                    startRefreshTimerIfNeeded()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .stackerOverlayPaletteDidChange)) { _ in
-                applyCurrentWidgetPalette()
+                DispatchQueue.main.async {
+                    applyCurrentWidgetPalette()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .stackerOverlayAppearanceDidChange)) { _ in
-                applyCurrentWidgetAppearance()
+                DispatchQueue.main.async {
+                    applyCurrentWidgetAppearance()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .stackerOverlayPlacementDidChange)) { _ in
-                applyCurrentWidgetPlacement()
+                DispatchQueue.main.async {
+                    applyCurrentWidgetPlacement()
+                }
             }
             .onDisappear {
                 handleDisappear()
@@ -1308,6 +1324,7 @@ struct ContentView: View {
     }
 
     private func postSidebarSnapshot() {
+        StackJumpShortcutSessionRegistry.sync(activeStackSessions: activeStackSessions)
         let snapshot = sidebarSnapshotBuilder.makeSnapshot(
             eligibleApplications: eligibleApplications,
             activeStackSessions: activeStackSessions,
@@ -1425,6 +1442,9 @@ struct ContentView: View {
                 },
                 onFocusApplicationStack: { pid in
                     focusApplicationStack(for: pid)
+                },
+                onFocusWindowInStack: { pid, windowID in
+                    focusWindowInSession(for: pid, id: windowID)
                 },
                 onResetApplicationOverlayPosition: { pid in
                     resetOverlayPosition(for: pid)

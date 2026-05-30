@@ -5,6 +5,8 @@ struct OverlayShortcutSettingsView: View {
     @AppStorage(OverlayShortcutPreference.keyCodeKey) private var keyCode = OverlayShortcutPreference.defaultKeyCode
     @AppStorage(OverlayShortcutPreference.modifiersKey) private var modifiersRawValue = OverlayShortcutPreference.defaultModifiers
     @AppStorage(OverlayShortcutPreference.hiddenKey) private var overlayHidden = false
+    @AppStorage(StackJumpShortcutPreference.enabledKey) private var stackJumpShortcutsEnabled = StackJumpShortcutPreference.defaultEnabled
+    @AppStorage(StackJumpShortcutPreference.modifiersKey) private var stackJumpModifiersRawValue = StackJumpShortcutPreference.defaultModifiers
     @AppStorage(StackOverlayAppearancePreference.key) private var widgetAppearanceRawValue = StackOverlayAppearance.system.rawValue
     @AppStorage(StackOverlayDotPalettePreference.key) private var dotPaletteRawValue = StackOverlayDotPalette.classic.rawValue
     @AppStorage(StackOverlayPlacementPreferenceStore.key) private var placementRawValue = StackOverlayPlacementPreference.top.rawValue
@@ -14,6 +16,11 @@ struct OverlayShortcutSettingsView: View {
     private var modifierFlags: NSEvent.ModifierFlags {
         get { NSEvent.ModifierFlags(rawValue: UInt(modifiersRawValue)) }
         set { modifiersRawValue = Int(newValue.rawValue) }
+    }
+
+    private var stackJumpModifierFlags: NSEvent.ModifierFlags {
+        get { NSEvent.ModifierFlags(rawValue: UInt(stackJumpModifiersRawValue)) }
+        set { stackJumpModifiersRawValue = Int(newValue.rawValue) }
     }
 
     private var shortcutPreview: String {
@@ -26,6 +33,10 @@ struct OverlayShortcutSettingsView: View {
             ShortcutKeyOption.commonOptions.first(where: { $0.id == UInt16(keyCode) })?.title
         ].compactMap { $0 }
         return pieces.joined(separator: " + ")
+    }
+
+    private var stackJumpShortcutPreview: String {
+        StackJumpShortcutState.shortcutDescription()
     }
 
     private var selectedPalette: StackOverlayDotPalette {
@@ -80,16 +91,24 @@ struct OverlayShortcutSettingsView: View {
             refreshAccessibilityStatus()
         }
         .onChange(of: overlayHidden) { _, _ in
-            NotificationCenter.default.post(name: .stackerOverlayVisibilityDidChange, object: nil)
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .stackerOverlayVisibilityDidChange, object: nil)
+            }
         }
         .onChange(of: dotPaletteRawValue) { _, _ in
-            NotificationCenter.default.post(name: .stackerOverlayPaletteDidChange, object: nil)
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .stackerOverlayPaletteDidChange, object: nil)
+            }
         }
         .onChange(of: widgetAppearanceRawValue) { _, _ in
-            NotificationCenter.default.post(name: .stackerOverlayAppearanceDidChange, object: nil)
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .stackerOverlayAppearanceDidChange, object: nil)
+            }
         }
         .onChange(of: placementRawValue) { _, _ in
-            NotificationCenter.default.post(name: .stackerOverlayPlacementDidChange, object: nil)
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .stackerOverlayPlacementDidChange, object: nil)
+            }
         }
     }
 
@@ -172,11 +191,58 @@ struct OverlayShortcutSettingsView: View {
 
                 Divider()
 
+                stackJumpShortcutEditor
+
+                Divider()
+
                 accessibilityRow
             }
             .padding(.top, 2)
         } label: {
             Label("Controls", systemImage: "keyboard")
+        }
+    }
+
+    private var stackJumpShortcutEditor: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Jump to stack slot with number keys", isOn: $stackJumpShortcutsEnabled)
+
+            Text("Control+1 switches to the first stacked window. Only active when a stacked browser is frontmost.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) {
+                    stackJumpModifierButton("Command", flag: .command)
+                    stackJumpModifierButton("Option", flag: .option)
+                    stackJumpModifierButton("Control", flag: .control)
+                    stackJumpModifierButton("Shift", flag: .shift)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        stackJumpModifierButton("Command", flag: .command)
+                        stackJumpModifierButton("Option", flag: .option)
+                        stackJumpModifierButton("Control", flag: .control)
+                        stackJumpModifierButton("Shift", flag: .shift)
+                    }
+                }
+            }
+            .disabled(!stackJumpShortcutsEnabled)
+
+            HStack(spacing: 10) {
+                Text(stackJumpShortcutPreview)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button("Reset Stack Jump Shortcut") {
+                    stackJumpModifiersRawValue = StackJumpShortcutPreference.defaultModifiers
+                }
+                .disabled(!stackJumpShortcutsEnabled)
+            }
         }
     }
 
@@ -320,6 +386,33 @@ struct OverlayShortcutSettingsView: View {
                 next.insert(flag)
             }
             modifiersRawValue = Int(next.rawValue)
+        } label: {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(isOn ? Color.accentColor.opacity(0.16) : Color(nsColor: .controlBackgroundColor))
+                )
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(isOn ? Color.accentColor.opacity(0.38) : Color.primary.opacity(0.08), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func stackJumpModifierButton(_ title: String, flag: NSEvent.ModifierFlags) -> some View {
+        let isOn = stackJumpModifierFlags.contains(flag)
+        return Button {
+            var next = NSEvent.ModifierFlags(rawValue: UInt(stackJumpModifiersRawValue))
+            if isOn {
+                next.remove(flag)
+            } else {
+                next.insert(flag)
+            }
+            stackJumpModifiersRawValue = Int(next.rawValue)
         } label: {
             Text(title)
                 .font(.system(size: 12, weight: .medium))

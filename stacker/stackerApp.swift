@@ -5,6 +5,7 @@ struct stackerApp: App {
     @NSApplicationDelegateAdaptor(StackerAppDelegate.self) private var appDelegate
     @StateObject private var menuBarState = MenuBarStateStore()
     @StateObject private var overlayVisibilityController = OverlayVisibilityController()
+    @StateObject private var stackJumpShortcutController = StackJumpShortcutController()
 
     var body: some Scene {
         WindowGroup("Stacker") {

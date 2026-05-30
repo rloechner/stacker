@@ -1,6 +1,6 @@
 # Stacker
 
-**⬇️ [Download Stacker v1.1.2 for macOS (DMG)](https://github.com/rloechner/stacker/releases/download/v1.1.2/Stacker-1.1.2.dmg)**
+**⬇️ [Download Stacker v1.1.3 for macOS (DMG)](https://github.com/rloechner/stacker/releases/download/v1.1.3/Stacker-1.1.3.dmg)**
 
 A tiny native macOS utility that turns multiple open browser windows into one live, aligned stack (with a handy widget for switching).
 
@@ -74,7 +74,7 @@ Accessibility permission is required because Stacker needs to inspect, focus, mo
 5. Return to Stacker after granting permission.
 6. Select a browser in the sidebar.
 7. Turn on the switcher.
-8. Use the attached widget, or macOS `Command-\`` window cycling, to switch between stacked windows.
+8. Use the attached widget, macOS `Command-\`` window cycling, or `Control-1` through `Control-9` to jump directly to a stacked window slot.
 
 If the browser list does not update after opening windows, use `Stacker > Hard Refresh Browsers`.
 
@@ -98,6 +98,8 @@ The admin refreshes automatically when Stacker is focused, when supported browse
 The widget attaches to the browser window and can sit on the top, bottom, left, or right edge. Drag it around the window boundary to choose a placement.
 
 You can switch through the stacked browser windows with the widget or with the native macOS `Command-\`` shortcut. Stacker keeps the windows aligned so that standard same-app window cycling feels more like tabbing through one desktop slot.
+
+Press `Control-1` through `Control-9` to jump directly to a specific stacked window (first dot = 1, second = 2, and so on). These shortcuts only apply when a stacked browser is frontmost, so they do not replace the browser's `Command-1` through `Command-9` tab shortcuts. Change the modifier or turn stack jump off in Settings.
 
 The widget uses dots or labels for stacked windows:
 

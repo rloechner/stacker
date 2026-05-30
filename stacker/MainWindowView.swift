@@ -126,7 +126,9 @@ struct MainWindowView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .stackerSidebarSnapshotDidChange)) { notification in
             guard let snapshot = notification.object as? SidebarSnapshot else { return }
-            apply(snapshot: snapshot)
+            DispatchQueue.main.async {
+                apply(snapshot: snapshot)
+            }
         }
         .alert("Enable Accessibility Access", isPresented: $showAccessibilityOnboardingAlert) {
             Button("Open System Settings") {

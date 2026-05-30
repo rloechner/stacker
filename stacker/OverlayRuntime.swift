@@ -478,6 +478,22 @@ private func applyContentsScale(_ scale: CGFloat, to layer: CALayer?) {
     layer.setNeedsDisplay()
 }
 
+private func layoutOverlaySubtreeIfReady(_ view: NSView) {
+    guard view.window != nil else { return }
+    DispatchQueue.main.async {
+        guard view.window != nil else { return }
+        view.layoutSubtreeIfNeeded()
+    }
+}
+
+private func measureOverlayFittingSize(for view: NSView) -> NSSize {
+    view.invalidateIntrinsicContentSize()
+    if view.needsLayout {
+        view.layout()
+    }
+    return view.fittingSize
+}
+
 private final class TransparentHostingView<Content: View>: NSHostingView<Content> {
     var onSecondaryClick: (() -> Void)?
 
@@ -584,7 +600,6 @@ private final class TransparentHostingView<Content: View>: NSHostingView<Content
         rootView = rootView
         invalidateIntrinsicContentSize()
         needsLayout = true
-        layoutSubtreeIfNeeded()
         needsDisplay = true
         displayIfNeeded()
         if let l = layer {
@@ -593,6 +608,7 @@ private final class TransparentHostingView<Content: View>: NSHostingView<Content
         if let w = window {
             w.invalidateShadow()
         }
+        layoutOverlaySubtreeIfReady(self)
     }
 }
 
@@ -673,7 +689,7 @@ private final class TransparentContainerView: NSView {
 private func invalidateOverlayRendering(for window: NSWindow) {
     guard let contentView = window.contentView else { return }
     invalidateOverlayRendering(in: contentView)
-    contentView.layoutSubtreeIfNeeded()
+    layoutOverlaySubtreeIfReady(contentView)
     contentView.displayIfNeeded()
     window.invalidateShadow()
 }
@@ -3480,9 +3496,7 @@ final class StackOverlayPanelController {
     }
 
     private func resizePanelsToFitContent() {
-        hostingView.invalidateIntrinsicContentSize()
-        hostingView.layoutSubtreeIfNeeded()
-        let fittingSize = hostingView.fittingSize
+        let fittingSize = measureOverlayFittingSize(for: hostingView)
         let currentFrame = panel.frame
         let currentContentSize = panel.contentRect(forFrameRect: currentFrame).size
         if currentContentSize != fittingSize {
@@ -3502,9 +3516,7 @@ final class StackOverlayPanelController {
             isUpdatingPosition = false
         }
 
-        controlsHostingView.invalidateIntrinsicContentSize()
-        controlsHostingView.layoutSubtreeIfNeeded()
-        let controlsFittingSize = controlsHostingView.fittingSize
+        let controlsFittingSize = measureOverlayFittingSize(for: controlsHostingView)
         if controlsPanel.contentRect(forFrameRect: controlsPanel.frame).size != controlsFittingSize {
             controlsPanel.setContentSize(controlsFittingSize)
         }
@@ -4110,10 +4122,8 @@ final class StackOverlayPanelController {
         // This is explicitly "complete re-render", not a single invalidate or origin tweak.
         for _ in 0..<3 {
             invalidatePanelRendering()
-            hostingView.layoutSubtreeIfNeeded()
             hostingView.displayIfNeeded()
             hostingView.layer?.setNeedsDisplay()
-            controlsHostingView.layoutSubtreeIfNeeded()
             controlsHostingView.displayIfNeeded()
             controlsHostingView.layer?.setNeedsDisplay()
 
@@ -4664,9 +4674,7 @@ final class CombineOverlayPanelController {
     }
 
     private func resizePanelToFitContent() {
-        hostingView.invalidateIntrinsicContentSize()
-        hostingView.layoutSubtreeIfNeeded()
-        let fittingSize = hostingView.fittingSize
+        let fittingSize = measureOverlayFittingSize(for: hostingView)
         if panel.contentRect(forFrameRect: panel.frame).size != fittingSize {
             panel.setContentSize(fittingSize)
         }

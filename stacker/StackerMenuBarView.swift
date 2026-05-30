@@ -25,6 +25,7 @@ final class MenuBarStateStore: ObservableObject {
     @Published var degradedStackCount = 0
     @Published var overlayHidden = UserDefaults.standard.bool(forKey: OverlayShortcutPreference.hiddenKey)
     @Published var overlayShortcutDescription = ""
+    @Published var stackJumpShortcutDescription = ""
 
     private var latestSnapshot: SidebarSnapshot?
     private var stackCountObserver: NSObjectProtocol?
@@ -212,6 +213,7 @@ final class MenuBarStateStore: ObservableObject {
 
     private func updateShortcutDescription() {
         overlayShortcutDescription = OverlayShortcutState.shortcutDescription()
+        stackJumpShortcutDescription = StackJumpShortcutState.shortcutDescription()
     }
 }
 
@@ -333,6 +335,10 @@ struct StackerMenuBarContent: View {
             }
             Label(state.overlayShortcutDescription, systemImage: "keyboard")
                 .foregroundStyle(.secondary)
+            if StackJumpShortcutState.isEnabled() {
+                Label("Stack jump: \(state.stackJumpShortcutDescription)", systemImage: "number")
+                    .foregroundStyle(.secondary)
+            }
 
             if state.degradedStackCount > 0 {
                 Button("Retry Failed Stacks") {
