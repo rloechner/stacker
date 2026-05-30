@@ -9,6 +9,7 @@ enum BrowserSupport {
         case firefox
         case orion
         case duckDuckGo
+        case dia
 
         var bundleIdentifier: String {
             bundleIdentifiers[0]
@@ -30,6 +31,8 @@ enum BrowserSupport {
                 return ["com.kagi.kagimacOS", "com.kagi.kagimacOS.RC"]
             case .duckDuckGo:
                 return ["com.duckduckgo.macos.browser"]
+            case .dia:
+                return ["company.thebrowser.dia"]
             }
         }
 
@@ -49,6 +52,8 @@ enum BrowserSupport {
                 return "Orion"
             case .duckDuckGo:
                 return "DuckDuckGo"
+            case .dia:
+                return "Dia"
             }
         }
 
@@ -68,6 +73,8 @@ enum BrowserSupport {
                 return "Orion"
             case .duckDuckGo:
                 return "DuckDuckGo"
+            case .dia:
+                return "Dia"
             }
         }
 
@@ -87,6 +94,8 @@ enum BrowserSupport {
                 return ["orion", "orion rc", "orion browser"]
             case .duckDuckGo:
                 return ["duckduckgo", "duckduckgo browser", "duckduckgo private browser"]
+            case .dia:
+                return ["dia", "dia browser"]
             }
         }
     }
