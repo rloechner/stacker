@@ -1,6 +1,6 @@
 # Stacker
 
-**⬇️ [Download Stacker v1.1.3 for macOS (DMG)](https://github.com/rloechner/stacker/releases/download/v1.1.3/Stacker-1.1.3.dmg)**
+**⬇️ [Download Stacker v1.1.4 for macOS (DMG)](https://github.com/rloechner/stacker/releases/download/v1.1.4/Stacker-1.1.4.dmg)**
 
 A tiny native macOS utility that turns multiple open browser windows into one live, aligned stack (with a handy widget for switching).
 
@@ -11,7 +11,7 @@ A tiny native macOS utility that turns multiple open browser windows into one li
 
 After updating, quit Stacker and toggle Accessibility off/on if macOS still shows permission enabled but Stacker does not detect it.
 
-Works with Chrome, Brave, Safari, Edge, Firefox, Orion, DuckDuckGo Browser, Dia, and Vivaldi (needs 2+ normal windows open).
+Works with Chrome, Brave, Safari, Edge, Firefox, Orion, DuckDuckGo Browser, Dia, BrowserOS, and Vivaldi (needs 2+ normal windows open).
 
 Signed and notarized for macOS Developer ID distribution.
 
@@ -51,6 +51,7 @@ Stacker currently supports:
 - Orion RC
 - DuckDuckGo Browser
 - Dia
+- BrowserOS
 - Vivaldi
 
 Each browser needs at least two normal open windows before Stacker can create a stack.

@@ -21,7 +21,7 @@ Because the value depends on reliable window observation, movement, and focus, w
 - **Safari** — Native WebKit. Full core flows validated. **Good**
 - **Firefox** — Full core flows validated (create, live sync, reorder, widget, etc.). Behaves well for Stacker's narrow purpose. **Good**
 
-All five supported browsers now carry a **Good** rating for the documented core test cases.
+The core browsers above carry a **Good** rating for the documented core test cases. Newer supported browsers remain marked individually until they receive the same level of validation.
 
 **Wake-from-sleep behavior (all browsers):**  
 Recent testing shows stacks generally survive sleep/wake with the widget still visible and functional. Transient inconsistencies can still occur; toggling the stack off and back on is a reliable recovery. This remains the most visible known limitation but is not a blocker for daily use.
@@ -46,6 +46,7 @@ This closes a long-standing class of multi-monitor / multi-resolution attachment
 | Microsoft Edge| Good       | Behaves like Chrome. No unique issues observed in core stack operations. |
 | Safari        | Good       | Native macOS browser. Stable window roles and titles. Widget attachment and synchronization work cleanly. |
 | Firefox       | Good       | Full core flows validated (create stack, live sync on move/resize, reorder, add/remove, widget switching). Behaves comparably to the Chromium browsers for Stacker's use case.<br><br>Known caveats (same as other browsers + Firefox-specific):<br>• Picture-in-Picture windows and certain small UI elements can appear in Accessibility window lists — user may need to manually remove them once.<br>• Wake-from-sleep recovery may still be required (documented limitation). |
+| BrowserOS     | Untested   | Supported by bundle identifier (`com.browseros.BrowserOS`) and app name. Needs local validation for window discovery, title normalization, widget attachment, and move/resize observation before being rated Good. |
 
 ## Non-Browser Apps (Out of Scope)
 

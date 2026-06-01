@@ -31,6 +31,10 @@ final class BrowserSupportTests: XCTestCase {
             .dia
         )
         XCTAssertEqual(
+            BrowserSupport.browser(bundleIdentifier: "com.browseros.BrowserOS", name: nil),
+            .browserOS
+        )
+        XCTAssertEqual(
             BrowserSupport.browser(bundleIdentifier: "com.vivaldi.Vivaldi", name: nil),
             .vivaldi
         )
@@ -58,6 +62,10 @@ final class BrowserSupportTests: XCTestCase {
         XCTAssertEqual(
             BrowserSupport.browser(bundleIdentifier: nil, name: "Dia"),
             .dia
+        )
+        XCTAssertEqual(
+            BrowserSupport.browser(bundleIdentifier: nil, name: "BrowserOS"),
+            .browserOS
         )
         XCTAssertEqual(
             BrowserSupport.browser(bundleIdentifier: nil, name: "Vivaldi"),
