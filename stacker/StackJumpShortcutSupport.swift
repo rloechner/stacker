@@ -131,6 +131,7 @@ final class StackJumpShortcutController: ObservableObject {
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var runLoopSourceInstalled = false
     private var trustObserver: NSObjectProtocol?
     private var defaultsObserver: NSObjectProtocol?
 
@@ -165,8 +166,11 @@ final class StackJumpShortcutController: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.updateShortcutDescription()
-            self?.installTapIfNeeded()
+            Task { @MainActor in
+                await Task.yield()
+                self?.updateShortcutDescription()
+                self?.installTapIfNeeded()
+            }
         }
     }
 
@@ -204,6 +208,7 @@ final class StackJumpShortcutController: ObservableObject {
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         if let runLoopSource {
             CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+            runLoopSourceInstalled = true
         }
         CGEvent.tapEnable(tap: tap, enable: true)
     }
@@ -212,9 +217,10 @@ final class StackJumpShortcutController: ObservableObject {
         if let eventTap {
             CGEvent.tapEnable(tap: eventTap, enable: false)
         }
-        if let runLoopSource {
+        if let runLoopSource, runLoopSourceInstalled {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         }
+        runLoopSourceInstalled = false
         eventTap = nil
         runLoopSource = nil
     }

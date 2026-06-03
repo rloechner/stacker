@@ -15,6 +15,7 @@ final class WindowStackController {
 
     private var groupedWindows: [WindowChoice] = []
     private var observer: AXObserver?
+    private var observerRunLoopSourceInstalled = false
     private var isApplyingSync = false
     private var scriptTimer: Timer?
     private var scriptAppName: String?
@@ -117,24 +118,26 @@ final class WindowStackController {
             AXObserverGetRunLoopSource(createdObserver),
             .defaultMode
         )
+        observerRunLoopSourceInstalled = true
 
         return true
     }
 
     func stopGrouping(separateWindows: Bool = false) {
-        if separateWindows {
-            separateGroupedWindows()
-        }
-
-        if let observer {
+        if let observer, observerRunLoopSourceInstalled {
             CFRunLoopRemoveSource(
                 CFRunLoopGetMain(),
                 AXObserverGetRunLoopSource(observer),
                 .defaultMode
             )
         }
-
+        observerRunLoopSourceInstalled = false
         observer = nil
+
+        if separateWindows {
+            separateGroupedWindows()
+        }
+
         groupedWindows = []
         groupedTitles = []
         scriptTimer?.invalidate()

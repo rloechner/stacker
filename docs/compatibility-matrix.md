@@ -47,6 +47,7 @@ This closes a long-standing class of multi-monitor / multi-resolution attachment
 | Safari        | Good       | Native macOS browser. Stable window roles and titles. Widget attachment and synchronization work cleanly. |
 | Firefox       | Good       | Full core flows validated (create stack, live sync on move/resize, reorder, add/remove, widget switching). Behaves comparably to the Chromium browsers for Stacker's use case.<br><br>Known caveats (same as other browsers + Firefox-specific):<br>• Picture-in-Picture windows and certain small UI elements can appear in Accessibility window lists — user may need to manually remove them once.<br>• Wake-from-sleep recovery may still be required (documented limitation). |
 | BrowserOS     | Untested   | Supported by bundle identifier (`com.browseros.BrowserOS`) and app name. Needs local validation for window discovery, title normalization, widget attachment, and move/resize observation before being rated Good. |
+| Helium        | Good       | Supported by bundle identifier (`net.imput.helium`) and app name. Locally validated for window discovery, stacking, widget attachment, and edge/corner widget dragging. |
 
 ## Non-Browser Apps (Out of Scope)
 

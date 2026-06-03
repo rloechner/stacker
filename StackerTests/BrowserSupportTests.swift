@@ -35,6 +35,10 @@ final class BrowserSupportTests: XCTestCase {
             .browserOS
         )
         XCTAssertEqual(
+            BrowserSupport.browser(bundleIdentifier: "net.imput.helium", name: nil),
+            .helium
+        )
+        XCTAssertEqual(
             BrowserSupport.browser(bundleIdentifier: "com.vivaldi.Vivaldi", name: nil),
             .vivaldi
         )
@@ -66,6 +70,10 @@ final class BrowserSupportTests: XCTestCase {
         XCTAssertEqual(
             BrowserSupport.browser(bundleIdentifier: nil, name: "BrowserOS"),
             .browserOS
+        )
+        XCTAssertEqual(
+            BrowserSupport.browser(bundleIdentifier: nil, name: "Helium Browser"),
+            .helium
         )
         XCTAssertEqual(
             BrowserSupport.browser(bundleIdentifier: nil, name: "Vivaldi"),

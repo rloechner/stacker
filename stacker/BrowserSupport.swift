@@ -11,6 +11,7 @@ enum BrowserSupport {
         case duckDuckGo
         case dia
         case browserOS
+        case helium
         case vivaldi
 
         var bundleIdentifier: String {
@@ -37,6 +38,8 @@ enum BrowserSupport {
                 return ["company.thebrowser.dia"]
             case .browserOS:
                 return ["com.browseros.BrowserOS"]
+            case .helium:
+                return ["net.imput.helium"]
             case .vivaldi:
                 return ["com.vivaldi.Vivaldi"]
             }
@@ -62,6 +65,8 @@ enum BrowserSupport {
                 return "Dia"
             case .browserOS:
                 return "BrowserOS"
+            case .helium:
+                return "Helium"
             case .vivaldi:
                 return "Vivaldi"
             }
@@ -87,6 +92,8 @@ enum BrowserSupport {
                 return "Dia"
             case .browserOS:
                 return "BrowserOS"
+            case .helium:
+                return "Helium"
             case .vivaldi:
                 return "Vivaldi"
             }
@@ -112,6 +119,8 @@ enum BrowserSupport {
                 return ["dia", "dia browser"]
             case .browserOS:
                 return ["browseros", "browser os", "browseros browser"]
+            case .helium:
+                return ["helium", "helium browser"]
             case .vivaldi:
                 return ["vivaldi", "vivaldi browser"]
             }

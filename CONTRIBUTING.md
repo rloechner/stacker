@@ -13,7 +13,7 @@ Because the scope is tight, feature requests that expand the mission significant
 When you file a bug, please include:
 
 - macOS version (e.g., 15.4.1)
-- Browsers involved (Chrome, Brave, Safari, Edge, Firefox, Orion, DuckDuckGo Browser, Dia, BrowserOS, Vivaldi)
+- Browsers involved (Chrome, Brave, Safari, Edge, Firefox, Orion, DuckDuckGo Browser, Dia, BrowserOS, Helium, Vivaldi)
 - Whether the problem occurs via the Accessibility path or falls back to System Events / AppleScript
 - Reproduction steps, especially anything involving:
   - Full-height browser windows

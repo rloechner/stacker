@@ -308,7 +308,6 @@ struct ContentView: View {
                 .controlSize(.small)
 
                 Button("Check Again") {
-                    AccessibilityPermissionSupport.requestSystemPrompt()
                     refreshAccessibilityState()
                 }
                 .buttonStyle(.bordered)
@@ -1903,9 +1902,15 @@ struct ContentView: View {
         // We iterate over a snapshot because we're about to tear everything down.
         let sessions = sessionStore.activeStackSessions
         for session in sessions {
-            session.controller.stopGrouping()
+            session.controller.stopGrouping(separateWindows: true)
             session.overlayController.close()
         }
+        combineOverlayController.close()
+        sessionStore.activeStackSessions = []
+        groupedTitles = []
+        activeWindowIDs = []
+        activeWindowOrder = []
+        StackJumpShortcutSessionRegistry.sync(activeStackSessions: [])
     }
 }
 

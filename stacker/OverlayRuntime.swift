@@ -482,15 +482,14 @@ private func layoutOverlaySubtreeIfReady(_ view: NSView) {
     guard view.window != nil else { return }
     DispatchQueue.main.async {
         guard view.window != nil else { return }
-        view.layoutSubtreeIfNeeded()
+        view.needsLayout = true
+        view.needsDisplay = true
+        view.layer?.setNeedsDisplay()
     }
 }
 
 private func measureOverlayFittingSize(for view: NSView) -> NSSize {
     view.invalidateIntrinsicContentSize()
-    if view.needsLayout {
-        view.layout()
-    }
     return view.fittingSize
 }
 
@@ -601,7 +600,6 @@ private final class TransparentHostingView<Content: View>: NSHostingView<Content
         invalidateIntrinsicContentSize()
         needsLayout = true
         needsDisplay = true
-        displayIfNeeded()
         if let l = layer {
             l.setNeedsDisplay()
         }
@@ -690,7 +688,6 @@ private func invalidateOverlayRendering(for window: NSWindow) {
     guard let contentView = window.contentView else { return }
     invalidateOverlayRendering(in: contentView)
     layoutOverlaySubtreeIfReady(contentView)
-    contentView.displayIfNeeded()
     window.invalidateShadow()
 }
 
@@ -2479,7 +2476,7 @@ final class StackOverlayPanelController {
     private var dockPosition: StackOverlayDockPosition
     private var horizontalSide: StackOverlayHorizontalSide = .left
     private var dragStartOrigin: CGPoint?
-    private var previousBackgroundDragDelta: CGSize = .zero
+    private var dragAnchorFrame: CGRect?
     private var lastAnchorFrame: CGRect?
     private var needsReanchorAfterScreenChange = false
     private var needsFullResetAfterAnchorScreenChange = false
@@ -2488,6 +2485,7 @@ final class StackOverlayPanelController {
     /// multiple resolve passes or startTracking detect a persisted-offset / screen-mismatch condition.
     private var didRehomeDueToScreenMismatch = false
     private var movementFadeWorkItem: DispatchWorkItem?
+    private var cornerRedrawWorkItem: DispatchWorkItem?
     private(set) var currentHealth: StackOverlayHealth = .visible
     var onHealthChanged: ((StackOverlayHealth) -> Void)?
     private let controlsPanelGap: CGFloat = 4
@@ -2495,6 +2493,8 @@ final class StackOverlayPanelController {
     private let sideGap: CGFloat = 0
     private let topGap: CGFloat = 0
     private let bottomGap: CGFloat = 0
+    private let perimeterCornerStickDistance: CGFloat = 24
+    private let perimeterRailSwitchHysteresis: CGFloat = 34
 
     init(
         appPID: pid_t,
@@ -2804,6 +2804,8 @@ final class StackOverlayPanelController {
         trackingTimer = nil
         movementFadeWorkItem?.cancel()
         movementFadeWorkItem = nil
+        cornerRedrawWorkItem?.cancel()
+        cornerRedrawWorkItem = nil
         if let moveObserver {
             NotificationCenter.default.removeObserver(moveObserver)
         }
@@ -3065,26 +3067,25 @@ final class StackOverlayPanelController {
     private func handleBackgroundDrag(_ delta: CGSize) {
         if dragStartOrigin == nil {
             dragStartOrigin = panel.frame.origin
-            previousBackgroundDragDelta = .zero
+            dragAnchorFrame = resolveCurrentAttachment().anchorFrame
             isDraggingBackground = true
         }
 
-        guard let anchorFrame = resolveCurrentAttachment().anchorFrame else {
-            return
-        }
-        let incrementalDelta = CGSize(
-            width: delta.width - previousBackgroundDragDelta.width,
-            height: delta.height - previousBackgroundDragDelta.height
-        )
-        previousBackgroundDragDelta = delta
+        guard let dragStartOrigin,
+              let anchorFrame = dragAnchorFrame else { return }
         let dragResult = perimeterDragResult(
-            from: panel.frame.origin,
-            delta: incrementalDelta,
+            from: dragStartOrigin,
+            delta: delta,
             anchorFrame: anchorFrame
         )
-        var resolvedOrigin = dragResult.origin
+        let resolvedOrigin = dragResult.origin
 
         if dockPosition != dragResult.dockPosition {
+            let needsHiddenCornerRedraw = dragResult.isNearCorner && isCornerRailTransition(from: dockPosition, to: dragResult.dockPosition)
+            if needsHiddenCornerRedraw {
+                beginCornerTransitionRedraw()
+            }
+
             dockPosition = dragResult.dockPosition
             preferredDockPosition = dragResult.dockPosition
             placementPreference = StackOverlayPlacementPreference(dockPosition: dragResult.dockPosition)
@@ -3092,13 +3093,9 @@ final class StackOverlayPanelController {
             onDockPositionChanged(dragResult.dockPosition)
             updateRootView()
             resizePanelsToFitContent()
-            if let cornerSnap = dragResult.cornerSnap {
-                resolvedOrigin = snappedCornerOrigin(
-                    for: dragResult.dockPosition,
-                    cornerSnap: cornerSnap,
-                    anchorFrame: anchorFrame,
-                    panelSize: panel.frame.size
-                )
+
+            if needsHiddenCornerRedraw {
+                finishCornerTransitionRedraw()
             }
         }
 
@@ -3114,7 +3111,9 @@ final class StackOverlayPanelController {
         )
 
         isUpdatingPosition = true
-        panel.setFrameOrigin(nextOrigin)
+        if squaredDistance(from: panel.frame.origin, to: nextOrigin) > 0.25 {
+            panel.setFrameOrigin(nextOrigin)
+        }
         isUpdatingPosition = false
     }
 
@@ -3122,53 +3121,233 @@ final class StackOverlayPanelController {
         from currentOrigin: CGPoint,
         delta: CGSize,
         anchorFrame: CGRect
-    ) -> (dockPosition: StackOverlayDockPosition, origin: CGPoint, cornerSnap: PerimeterCornerSnap?) {
+    ) -> (dockPosition: StackOverlayDockPosition, origin: CGPoint, isNearCorner: Bool) {
         let rawOrigin = CGPoint(
             x: currentOrigin.x + delta.width,
             y: currentOrigin.y + delta.height
         )
         let bounds = perimeterBounds(anchorFrame: anchorFrame, panelSize: panel.frame.size)
+        let preferredScreen = referenceScreen(for: anchorFrame)
 
         // For tall (full-height) windows, prevent perimeter drag from transitioning
         // from top/bottom onto the left/right rails. The vertical travel is too small
         // and the transition looks broken (widget slides over the window then snaps).
         let sideRailViable = (bounds.maxY - bounds.minY) >= panel.frame.height * 1.5
 
-        switch dockPosition {
-        case .top:
-            if rawOrigin.x < bounds.minX && sideRailViable {
-                return (.left, snappedCornerOrigin(for: .left, cornerSnap: .topLeading, anchorFrame: anchorFrame, panelSize: panel.frame.size), .topLeading)
-            }
-            if rawOrigin.x > bounds.maxX && sideRailViable {
-                return (.right, snappedCornerOrigin(for: .right, cornerSnap: .topTrailing, anchorFrame: anchorFrame, panelSize: panel.frame.size), .topTrailing)
-            }
-            return (.top, CGPoint(x: min(max(rawOrigin.x, bounds.minX), bounds.maxX), y: anchorFrame.maxY + topGap), nil)
-        case .bottom:
-            if rawOrigin.x < bounds.minX && sideRailViable {
-                return (.left, snappedCornerOrigin(for: .left, cornerSnap: .bottomLeading, anchorFrame: anchorFrame, panelSize: panel.frame.size), .bottomLeading)
-            }
-            if rawOrigin.x > bounds.maxX && sideRailViable {
-                return (.right, snappedCornerOrigin(for: .right, cornerSnap: .bottomTrailing, anchorFrame: anchorFrame, panelSize: panel.frame.size), .bottomTrailing)
-            }
-            return (.bottom, CGPoint(x: min(max(rawOrigin.x, bounds.minX), bounds.maxX), y: anchorFrame.minY - panel.frame.height - bottomGap), nil)
-        case .left:
-            // If we're on a side rail but vertical travel is tiny (tall window), force migration to top/bottom on any drag.
-            if !sideRailViable || rawOrigin.y > bounds.maxY {
-                return (.top, snappedCornerOrigin(for: .top, cornerSnap: .topLeading, anchorFrame: anchorFrame, panelSize: panel.frame.size), .topLeading)
-            }
-            if rawOrigin.y < bounds.minY {
-                return (.bottom, snappedCornerOrigin(for: .bottom, cornerSnap: .bottomLeading, anchorFrame: anchorFrame, panelSize: panel.frame.size), .bottomLeading)
-            }
-            return (.left, CGPoint(x: anchorFrame.minX - panel.frame.width - sideGap, y: min(max(rawOrigin.y, bounds.minY), bounds.maxY)), nil)
-        case .right:
-            if !sideRailViable || rawOrigin.y > bounds.maxY {
-                return (.top, snappedCornerOrigin(for: .top, cornerSnap: .topTrailing, anchorFrame: anchorFrame, panelSize: panel.frame.size), .topTrailing)
-            }
-            if rawOrigin.y < bounds.minY {
-                return (.bottom, snappedCornerOrigin(for: .bottom, cornerSnap: .bottomTrailing, anchorFrame: anchorFrame, panelSize: panel.frame.size), .bottomTrailing)
-            }
-            return (.right, CGPoint(x: anchorFrame.maxX + sideGap, y: min(max(rawOrigin.y, bounds.minY), bounds.maxY)), nil)
+        var candidates: [(dockPosition: StackOverlayDockPosition, origin: CGPoint, distance: CGFloat)] = [
+            (
+                .top,
+                stickyOrigin(
+                    rawOrigin: rawOrigin,
+                    railOrigin: clampedOrigin(
+                        proposedOrigin: CGPoint(
+                            x: min(max(rawOrigin.x, bounds.minX), bounds.maxX),
+                            y: anchorFrame.maxY + topGap
+                        ),
+                        preferredScreen: preferredScreen,
+                        dockPosition: .top
+                    ),
+                    leadingCorner: clampedOrigin(
+                        proposedOrigin: snappedCornerOrigin(for: .top, cornerSnap: .topLeading, anchorFrame: anchorFrame, panelSize: panel.frame.size),
+                        preferredScreen: preferredScreen,
+                        dockPosition: .top
+                    ),
+                    trailingCorner: clampedOrigin(
+                        proposedOrigin: snappedCornerOrigin(for: .top, cornerSnap: .topTrailing, anchorFrame: anchorFrame, panelSize: panel.frame.size),
+                        preferredScreen: preferredScreen,
+                        dockPosition: .top
+                    )
+                ),
+                0
+            ),
+            (
+                .bottom,
+                stickyOrigin(
+                    rawOrigin: rawOrigin,
+                    railOrigin: clampedOrigin(
+                        proposedOrigin: CGPoint(
+                            x: min(max(rawOrigin.x, bounds.minX), bounds.maxX),
+                            y: anchorFrame.minY - panel.frame.height - bottomGap
+                        ),
+                        preferredScreen: preferredScreen,
+                        dockPosition: .bottom
+                    ),
+                    leadingCorner: clampedOrigin(
+                        proposedOrigin: snappedCornerOrigin(for: .bottom, cornerSnap: .bottomLeading, anchorFrame: anchorFrame, panelSize: panel.frame.size),
+                        preferredScreen: preferredScreen,
+                        dockPosition: .bottom
+                    ),
+                    trailingCorner: clampedOrigin(
+                        proposedOrigin: snappedCornerOrigin(for: .bottom, cornerSnap: .bottomTrailing, anchorFrame: anchorFrame, panelSize: panel.frame.size),
+                        preferredScreen: preferredScreen,
+                        dockPosition: .bottom
+                    )
+                ),
+                0
+            )
+        ]
+
+        if sideRailViable {
+            candidates.append(contentsOf: [
+                (
+                    .left,
+                    stickyOrigin(
+                        rawOrigin: rawOrigin,
+                        railOrigin: clampedOrigin(
+                            proposedOrigin: CGPoint(
+                                x: anchorFrame.minX - panel.frame.width - sideGap,
+                                y: min(max(rawOrigin.y, bounds.minY), bounds.maxY)
+                            ),
+                            preferredScreen: preferredScreen,
+                            dockPosition: .left
+                        ),
+                        leadingCorner: clampedOrigin(
+                            proposedOrigin: snappedCornerOrigin(for: .left, cornerSnap: .topLeading, anchorFrame: anchorFrame, panelSize: panel.frame.size),
+                            preferredScreen: preferredScreen,
+                            dockPosition: .left
+                        ),
+                        trailingCorner: clampedOrigin(
+                            proposedOrigin: snappedCornerOrigin(for: .left, cornerSnap: .bottomLeading, anchorFrame: anchorFrame, panelSize: panel.frame.size),
+                            preferredScreen: preferredScreen,
+                            dockPosition: .left
+                        ),
+                    ),
+                    0
+                ),
+                (
+                    .right,
+                    stickyOrigin(
+                        rawOrigin: rawOrigin,
+                        railOrigin: clampedOrigin(
+                            proposedOrigin: CGPoint(
+                                x: anchorFrame.maxX + sideGap,
+                                y: min(max(rawOrigin.y, bounds.minY), bounds.maxY)
+                            ),
+                            preferredScreen: preferredScreen,
+                            dockPosition: .right
+                        ),
+                        leadingCorner: clampedOrigin(
+                            proposedOrigin: snappedCornerOrigin(for: .right, cornerSnap: .topTrailing, anchorFrame: anchorFrame, panelSize: panel.frame.size),
+                            preferredScreen: preferredScreen,
+                            dockPosition: .right
+                        ),
+                        trailingCorner: clampedOrigin(
+                            proposedOrigin: snappedCornerOrigin(for: .right, cornerSnap: .bottomTrailing, anchorFrame: anchorFrame, panelSize: panel.frame.size),
+                            preferredScreen: preferredScreen,
+                            dockPosition: .right
+                        ),
+                    ),
+                    0
+                )
+            ])
         }
+
+        for index in candidates.indices {
+            let candidate = candidates[index]
+            candidates[index] = (
+                candidate.dockPosition,
+                candidate.origin,
+                squaredDistance(from: rawOrigin, to: candidate.origin)
+            )
+        }
+
+        guard let nearest = candidates.min(by: { $0.distance < $1.distance }) else {
+            return (.top, CGPoint(x: bounds.minX, y: anchorFrame.maxY + topGap), false)
+        }
+        let isNearCorner = isNearPerimeterCorner(rawOrigin: rawOrigin, anchorFrame: anchorFrame)
+
+        if let current = candidates.first(where: { $0.dockPosition == dockPosition }),
+           current.distance <= nearest.distance + perimeterRailSwitchHysteresis * perimeterRailSwitchHysteresis {
+            return (current.dockPosition, current.origin, isNearCorner)
+        }
+
+        return (nearest.dockPosition, nearest.origin, isNearCorner)
+    }
+
+    private func isNearPerimeterCorner(rawOrigin: CGPoint, anchorFrame: CGRect) -> Bool {
+        let preferredScreen = referenceScreen(for: anchorFrame)
+        let corners = [
+            clampedOrigin(
+                proposedOrigin: snappedCornerOrigin(for: .top, cornerSnap: .topLeading, anchorFrame: anchorFrame, panelSize: panel.frame.size),
+                preferredScreen: preferredScreen,
+                dockPosition: .top
+            ),
+            clampedOrigin(
+                proposedOrigin: snappedCornerOrigin(for: .top, cornerSnap: .topTrailing, anchorFrame: anchorFrame, panelSize: panel.frame.size),
+                preferredScreen: preferredScreen,
+                dockPosition: .top
+            ),
+            clampedOrigin(
+                proposedOrigin: snappedCornerOrigin(for: .bottom, cornerSnap: .bottomLeading, anchorFrame: anchorFrame, panelSize: panel.frame.size),
+                preferredScreen: preferredScreen,
+                dockPosition: .bottom
+            ),
+            clampedOrigin(
+                proposedOrigin: snappedCornerOrigin(for: .bottom, cornerSnap: .bottomTrailing, anchorFrame: anchorFrame, panelSize: panel.frame.size),
+                preferredScreen: preferredScreen,
+                dockPosition: .bottom
+            )
+        ]
+
+        let threshold = perimeterCornerStickDistance * 2
+        return corners.contains { squaredDistance(from: rawOrigin, to: $0) <= threshold * threshold }
+    }
+
+    private func isCornerRailTransition(from oldDockPosition: StackOverlayDockPosition, to newDockPosition: StackOverlayDockPosition) -> Bool {
+        guard oldDockPosition != newDockPosition else { return false }
+        switch (oldDockPosition, newDockPosition) {
+        case (.top, .left), (.top, .right),
+             (.bottom, .left), (.bottom, .right),
+             (.left, .top), (.left, .bottom),
+             (.right, .top), (.right, .bottom):
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func beginCornerTransitionRedraw() {
+        cornerRedrawWorkItem?.cancel()
+        cornerRedrawWorkItem = nil
+        panel.alphaValue = 0
+        controlsPanel.alphaValue = 0
+    }
+
+    private func finishCornerTransitionRedraw() {
+        cornerRedrawWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.invalidatePanelRendering()
+            self.panel.alphaValue = 1
+            self.controlsPanel.alphaValue = 1
+        }
+        cornerRedrawWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: workItem)
+    }
+
+    private func stickyOrigin(
+        rawOrigin: CGPoint,
+        railOrigin: CGPoint,
+        leadingCorner: CGPoint,
+        trailingCorner: CGPoint
+    ) -> CGPoint {
+        if distance(from: rawOrigin, to: leadingCorner) <= perimeterCornerStickDistance {
+            return leadingCorner
+        }
+        if distance(from: rawOrigin, to: trailingCorner) <= perimeterCornerStickDistance {
+            return trailingCorner
+        }
+        return railOrigin
+    }
+
+    private func squaredDistance(from lhs: CGPoint, to rhs: CGPoint) -> CGFloat {
+        let dx = lhs.x - rhs.x
+        let dy = lhs.y - rhs.y
+        return dx * dx + dy * dy
+    }
+
+    private func distance(from lhs: CGPoint, to rhs: CGPoint) -> CGFloat {
+        sqrt(squaredDistance(from: lhs, to: rhs))
     }
 
     private func perimeterBounds(anchorFrame: CGRect, panelSize: CGSize) -> (minX: CGFloat, maxX: CGFloat, minY: CGFloat, maxY: CGFloat) {
@@ -3211,8 +3390,12 @@ final class StackOverlayPanelController {
 
     private func handleBackgroundDragEnded() {
         dragStartOrigin = nil
-        previousBackgroundDragDelta = .zero
+        dragAnchorFrame = nil
         isDraggingBackground = false
+        cornerRedrawWorkItem?.cancel()
+        cornerRedrawWorkItem = nil
+        panel.alphaValue = 1
+        controlsPanel.alphaValue = 1
 
         // Record where the user dropped the widget (using the classic centered reference).
         captureUserAnchorOffset()
@@ -3303,8 +3486,9 @@ final class StackOverlayPanelController {
             if hasMovedOrResized || screenChanged {
                 movementFadeWorkItem?.cancel()
                 viewModel.isWindowChanging = true
-                
-                // Hide panels immediately on move/resize/screen change
+
+                // Avoid driving AppKit/WindowServer panel transactions while the browser
+                // is actively moving or resizing; doing so can cause SLS transaction stalls.
                 panel.orderOut(nil)
                 controlsPanel.orderOut(nil)
                 
@@ -3327,7 +3511,6 @@ final class StackOverlayPanelController {
             }
         }
 
-        // 2. Keep panels hidden while the window is still changing.
         if viewModel.isWindowChanging {
             panel.orderOut(nil)
             controlsPanel.orderOut(nil)
@@ -3395,8 +3578,6 @@ final class StackOverlayPanelController {
                 fullAnchorResolutionChangeReset(freshConvertedAnchor: freshAnchor, state: state)
             }
         } else {
-            print("[Stacker] Window movement stopped. Re-attaching widget...")
-            
             // Sync backing scales and redraw panels first
             syncLayerBackingScales()
             invalidatePanelRendering()
@@ -3573,7 +3754,7 @@ final class StackOverlayPanelController {
 
         // On cross-resolution screen transitions (higher-res -> lower-res or vice-versa),
         // the in-memory user drag offsets (pixel deltas relative to the *old* anchor
-        // and its screen's visibleFrame / AX maxY) + previous drag delta + lastAnchorFrame
+        // and its screen's visibleFrame / AX maxY) + lastAnchorFrame
         // are stale/poisoned. This causes the widget to compute bogus origins via
         // resolveAttachment / clampedOrigin / proposedOrigin (using verticalAnchorOffset
         // etc.) and land orphaned in the global void instead of re-attaching.
@@ -3583,7 +3764,6 @@ final class StackOverlayPanelController {
         // home on the *destination* screen's visibleFrame. Future drags will persist
         // fresh offsets for the new context. Non-screen display events leave offsets alone.
         if needsReanchorAfterScreenChange {
-            previousBackgroundDragDelta = .zero
             horizontalAnchorOffset = 0
             verticalAnchorOffset = 0
             needsReanchorAfterScreenChange = false
@@ -4082,7 +4262,6 @@ final class StackOverlayPanelController {
         // Zero all in-memory positioning memory (clean slate; persisted store untouched)
         horizontalAnchorOffset = 0
         verticalAnchorOffset = 0
-        previousBackgroundDragDelta = .zero
         lastAnchorFrame = nil
         needsReanchorAfterScreenChange = false
         needsFullResetAfterAnchorScreenChange = false
@@ -4122,9 +4301,7 @@ final class StackOverlayPanelController {
         // This is explicitly "complete re-render", not a single invalidate or origin tweak.
         for _ in 0..<3 {
             invalidatePanelRendering()
-            hostingView.displayIfNeeded()
             hostingView.layer?.setNeedsDisplay()
-            controlsHostingView.displayIfNeeded()
             controlsHostingView.layer?.setNeedsDisplay()
 
             // Dedicated force rebuild (rootView self-assign triggers full SwiftUI refresh)
@@ -4163,6 +4340,14 @@ final class StackOverlayPanelController {
     }
 
     private func clampedOrigin(proposedOrigin: CGPoint, preferredScreen: NSScreen?) -> CGPoint {
+        clampedOrigin(proposedOrigin: proposedOrigin, preferredScreen: preferredScreen, dockPosition: dockPosition)
+    }
+
+    private func clampedOrigin(
+        proposedOrigin: CGPoint,
+        preferredScreen: NSScreen?,
+        dockPosition: StackOverlayDockPosition
+    ) -> CGPoint {
         let visibleFrame = preferredScreen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? CGRect(origin: .zero, size: panel.frame.size)
         let inset: CGFloat = 12
         let minX = visibleFrame.minX + inset

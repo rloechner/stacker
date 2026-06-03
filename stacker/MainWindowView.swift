@@ -76,7 +76,6 @@ struct MainWindowView: View {
     @State private var selectedInactiveWindows: [EditorWindowSnapshot] = []
     @State private var draggingLinkedWindowID: Int?
     @State private var adminRefreshWorkItem: DispatchWorkItem?
-    @State private var showAccessibilityOnboardingAlert = false
     private let settingsSelectionID = Int32.min
 
     var body: some View {
@@ -96,9 +95,7 @@ struct MainWindowView: View {
             scheduleAdminRefresh(delay: 0.15)
         }
         .onReceive(NotificationCenter.default.publisher(for: .stackerAccessibilityTrustDidChange)) { _ in
-            if AccessibilityPermissionSupport.isProcessTrusted {
-                showAccessibilityOnboardingAlert = false
-            }
+            scheduleAdminRefresh(delay: 0.15)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
             guard let window = notification.object as? NSWindow,
@@ -126,17 +123,10 @@ struct MainWindowView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .stackerSidebarSnapshotDidChange)) { notification in
             guard let snapshot = notification.object as? SidebarSnapshot else { return }
-            DispatchQueue.main.async {
+            Task { @MainActor in
+                await Task.yield()
                 apply(snapshot: snapshot)
             }
-        }
-        .alert("Enable Accessibility Access", isPresented: $showAccessibilityOnboardingAlert) {
-            Button("Open System Settings") {
-                openAccessibilitySettings()
-            }
-            Button("Not Now", role: .cancel) {}
-        } message: {
-            Text("Stacker needs Accessibility permission to inspect, focus, move, resize, and observe browser windows. Enable Stacker in System Settings > Privacy & Security > Accessibility.")
         }
     }
 }
@@ -146,12 +136,10 @@ private extension MainWindowView {
         _ = AccessibilityPermissionCoordinator.refreshTrustState()
         guard !AccessibilityPermissionSupport.isProcessTrusted else { return }
 
-        AccessibilityPermissionSupport.requestSystemPrompt()
-        showAccessibilityOnboardingAlert = true
-    }
-
-    private func openAccessibilitySettings() {
-        AccessibilityPermissionSupport.openSystemSettings()
+        Task { @MainActor in
+            await Task.yield()
+            expandedPID = settingsSelectionID
+        }
     }
 
     private var apps: [AppSnapshot] {

@@ -185,7 +185,8 @@ final class OverlayVisibilityController: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            DispatchQueue.main.async {
+            Task { @MainActor in
+                await Task.yield()
                 self?.isHidden = UserDefaults.standard.bool(forKey: OverlayShortcutPreference.hiddenKey)
                 self?.updateShortcutDescription()
             }

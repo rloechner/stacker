@@ -291,8 +291,7 @@ struct OverlayShortcutSettingsView: View {
                 AccessibilityPermissionSupport.openSystemSettings()
             }
 
-            Button("Refresh") {
-                AccessibilityPermissionSupport.requestSystemPrompt()
+            Button("Check Again") {
                 _ = AccessibilityPermissionCoordinator.refreshTrustState()
                 refreshAccessibilityStatus()
             }
