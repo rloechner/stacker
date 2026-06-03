@@ -24,6 +24,7 @@ extension Notification.Name {
     static let stackerOverlayPaletteDidChange = Notification.Name("stackerOverlayPaletteDidChange")
     static let stackerOverlayAppearanceDidChange = Notification.Name("stackerOverlayAppearanceDidChange")
     static let stackerOverlayPlacementDidChange = Notification.Name("stackerOverlayPlacementDidChange")
+    static let stackerMaximizedOverlayPreferenceDidChange = Notification.Name("stackerMaximizedOverlayPreferenceDidChange")
     static let stackerResetApplicationOverlayPosition = Notification.Name("stackerResetApplicationOverlayPosition")
     static let stackerDegradedStackCountDidChange = Notification.Name("stackerDegradedStackCountDidChange")
     static let stackerRetryDegradedStacks = Notification.Name("stackerRetryDegradedStacks")

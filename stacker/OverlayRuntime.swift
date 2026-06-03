@@ -764,6 +764,7 @@ private final class StackOverlayViewModel {
     var horizontalSide: StackOverlayHorizontalSide
     var maxPrimaryWindowWidth: CGFloat?
     var overlayHealth: StackOverlayHealth
+    var placementMode: StackOverlayPlacementMode
     var isWindowChanging: Bool
 
     init(
@@ -780,6 +781,7 @@ private final class StackOverlayViewModel {
         horizontalSide: StackOverlayHorizontalSide = .left,
         maxPrimaryWindowWidth: CGFloat? = nil,
         overlayHealth: StackOverlayHealth = .visible,
+        placementMode: StackOverlayPlacementMode = .edgeDocked,
         isWindowChanging: Bool = false
     ) {
         self.items = items
@@ -795,6 +797,7 @@ private final class StackOverlayViewModel {
         self.horizontalSide = horizontalSide
         self.maxPrimaryWindowWidth = maxPrimaryWindowWidth
         self.overlayHealth = overlayHealth
+        self.placementMode = placementMode
         self.isWindowChanging = isWindowChanging
     }
 }
@@ -950,6 +953,12 @@ private struct StackOverlayStripView: View {
         .compositingGroup()
         .contextMenu { controlsContextMenu }
         .help("Click a window icon to focus its browser window. Drag the widget to move it.")
+        .onHover { isHovering in
+            if model.placementMode == .floatingInWindow,
+               MaximizedWindowOverlayPreference.expandOnHover {
+                isHoverExpanded = isHovering
+            }
+        }
         .onPreferenceChange(StackOverlayCollapsedItemFramePreferenceKey.self) { collapsedItemFrames = $0 }
         .onPreferenceChange(StackOverlayChromeActionFramePreferenceKey.self) { chromeActionFrames = $0 }
     }
@@ -1010,8 +1019,15 @@ private struct StackOverlayStripView: View {
         .contentShape(verticalCapShape)
     }
 
+    @State private var isHoverExpanded = false
+
     private var showsCollapsedChromeActions: Bool {
-        densityMetrics != .compact
+        guard densityMetrics != .compact else { return false }
+        guard model.placementMode == .floatingInWindow,
+              MaximizedWindowOverlayPreference.expandOnHover else {
+            return true
+        }
+        return isHoverExpanded
     }
 
     private var showsCollapsedUtilities: Bool {
@@ -1121,6 +1137,16 @@ private struct StackOverlayStripView: View {
         let outerRadius = collapsedChromeOuterCornerRadius
         let attachedRadius = collapsedChromeAttachedCornerRadius
 
+        if model.placementMode == .floatingInWindow {
+            return UnevenRoundedRectangle(
+                topLeadingRadius: 999,
+                bottomLeadingRadius: 999,
+                bottomTrailingRadius: 999,
+                topTrailingRadius: 999,
+                style: .continuous
+            )
+        }
+
         switch model.dockPosition {
         case .top:
             return UnevenRoundedRectangle(
@@ -1222,7 +1248,9 @@ private struct StackOverlayStripView: View {
 
     @ViewBuilder
     private func collapsedChromeAttachmentLine() -> some View {
-        if model.dockPosition == .bottom {
+        if model.placementMode == .floatingInWindow {
+            EmptyView()
+        } else if model.dockPosition == .bottom {
             Rectangle()
                 .fill(
                     LinearGradient(
@@ -1755,6 +1783,23 @@ private struct StackOverlayStripView: View {
         // "Focus Stack" removed from right-click menu (user request)
         Button(action: onOpenEditor) {
             Label("Open In Stacker", systemImage: "list.bullet.rectangle")
+        }
+        if model.placementMode == .floatingInWindow {
+            Divider()
+            Menu {
+                ForEach(MaximizedWindowOverlayOrientation.allCases, id: \.rawValue) { orientation in
+                    Button {
+                        MaximizedWindowOverlayPreference.setOrientation(orientation)
+                    } label: {
+                        Label(
+                            "\(orientation == MaximizedWindowOverlayPreference.orientation ? "✓ " : "")\(orientation.title)",
+                            systemImage: orientation.systemImage
+                        )
+                    }
+                }
+            } label: {
+                Label("Fill Mode Layout", systemImage: "rectangle.on.rectangle")
+            }
         }
         Divider()
         Menu {
@@ -2465,6 +2510,8 @@ final class StackOverlayPanelController {
     private var isDraggingBackground = false
     private var horizontalAnchorOffset: CGFloat = 0
     private var verticalAnchorOffset: CGFloat = 0
+    private var floatingHorizontalOffset: CGFloat = 0
+    private var floatingVerticalOffset: CGFloat = 0
     private var isShowingConfig = false
     private var controlsPinnedOpen = false
     private var appearance = StackOverlayAppearancePreference.current()
@@ -2474,6 +2521,7 @@ final class StackOverlayPanelController {
     private var placementPreference: StackOverlayPlacementPreference
     private var preferredDockPosition: StackOverlayDockPosition
     private var dockPosition: StackOverlayDockPosition
+    private var placementMode: StackOverlayPlacementMode = .edgeDocked
     private var horizontalSide: StackOverlayHorizontalSide = .left
     private var dragStartOrigin: CGPoint?
     private var dragAnchorFrame: CGRect?
@@ -2881,9 +2929,10 @@ final class StackOverlayPanelController {
         viewModel.labelMode = labelMode
         viewModel.densityMode = densityMode
         viewModel.placementPreference = placementPreference
-        viewModel.dockPosition = dockPosition
+        viewModel.dockPosition = viewDockPosition
         viewModel.horizontalSide = horizontalSide
         viewModel.overlayHealth = currentHealth
+        viewModel.placementMode = placementMode
         if let anchorFrame = currentAnchorFrameForLayout() {
             viewModel.maxPrimaryWindowWidth = max(anchorFrame.width - 24, 120)
         } else {
@@ -2911,6 +2960,13 @@ final class StackOverlayPanelController {
             }
         )
         controlsHostingView.onSecondaryClick = nil
+    }
+
+    private var viewDockPosition: StackOverlayDockPosition {
+        guard placementMode == .floatingInWindow else {
+            return dockPosition
+        }
+        return MaximizedWindowOverlayPreference.orientation.dockPosition
     }
 
     private func installRootView() {
@@ -3073,6 +3129,26 @@ final class StackOverlayPanelController {
 
         guard let dragStartOrigin,
               let anchorFrame = dragAnchorFrame else { return }
+
+        if placementMode == .floatingInWindow {
+            let proposed = CGPoint(
+                x: dragStartOrigin.x + delta.width,
+                y: dragStartOrigin.y + delta.height
+            )
+            let nextOrigin = attachmentEngine.clampedFloatingOrigin(
+                for: anchorFrame,
+                panelSize: panel.frame.size,
+                horizontalOffset: proposed.x - anchorFrame.minX - WindowAttachmentEngine.floatingDefaultInset,
+                verticalOffset: proposed.y - anchorFrame.minY - WindowAttachmentEngine.floatingDefaultInset
+            )
+            isUpdatingPosition = true
+            if squaredDistance(from: panel.frame.origin, to: nextOrigin) > 0.25 {
+                panel.setFrameOrigin(nextOrigin)
+            }
+            isUpdatingPosition = false
+            return
+        }
+
         let dragResult = perimeterDragResult(
             from: dragStartOrigin,
             delta: delta,
@@ -3484,30 +3560,40 @@ final class StackOverlayPanelController {
             } ?? false
 
             if hasMovedOrResized || screenChanged {
-                movementFadeWorkItem?.cancel()
-                viewModel.isWindowChanging = true
+                let transitionResolvedAttachment = resolveAttachment(for: state)
+                if transitionResolvedAttachment.placementMode != placementMode {
+                    // Crossing between normal edge-docked mode and maximized fill mode should
+                    // redraw immediately; delaying here leaves the old pill/drawer shape visible.
+                    movementFadeWorkItem?.cancel()
+                    movementFadeWorkItem = nil
+                    viewModel.isWindowChanging = false
+                    lastAnchorFrame = freshAnchor
+                } else {
+                    movementFadeWorkItem?.cancel()
+                    viewModel.isWindowChanging = true
 
-                // Avoid driving AppKit/WindowServer panel transactions while the browser
-                // is actively moving or resizing; doing so can cause SLS transaction stalls.
-                panel.orderOut(nil)
-                controlsPanel.orderOut(nil)
-                
-                if screenChanged {
-                    needsReanchorAfterScreenChange = true
-                    needsFullResetAfterAnchorScreenChange = true
+                    // Avoid driving AppKit/WindowServer panel transactions while the browser
+                    // is actively moving or resizing; doing so can cause SLS transaction stalls.
+                    panel.orderOut(nil)
+                    controlsPanel.orderOut(nil)
+
+                    if screenChanged {
+                        needsReanchorAfterScreenChange = true
+                        needsFullResetAfterAnchorScreenChange = true
+                    }
+
+                    lastAnchorFrame = freshAnchor
+
+                    let workItem = DispatchWorkItem { [weak self] in
+                        guard let self else { return }
+                        self.viewModel.isWindowChanging = false
+                        self.handleWindowMovementStopped()
+                    }
+                    movementFadeWorkItem = workItem
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.20, execute: workItem)
+
+                    return
                 }
-                
-                lastAnchorFrame = freshAnchor
-                
-                let workItem = DispatchWorkItem { [weak self] in
-                    guard let self else { return }
-                    self.viewModel.isWindowChanging = false
-                    self.handleWindowMovementStopped()
-                }
-                movementFadeWorkItem = workItem
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.20, execute: workItem)
-                
-                return
             }
         }
 
@@ -3539,22 +3625,29 @@ final class StackOverlayPanelController {
         }
 
         resolvedAttachment = rehomeIfCurrentResolvedIsBad(resolvedAttachment, state: state)
-        updateHealth(resolvedAttachment.health)
 
         guard let origin = resolvedAttachment.origin,
-              resolvedAttachment.health == .visible || resolvedAttachment.health == .clamped else {
+              resolvedAttachment.health.isWidgetDisplayed else {
+            updateHealth(resolvedAttachment.health)
             controlsPanel.orderOut(nil)
             panel.orderOut(nil)
             return
         }
 
         if let anchorFrame = resolvedAttachment.anchorFrame,
-           isCoveredByHigherWindow(anchorFrame: anchorFrame, panelFrame: CGRect(origin: origin, size: panel.frame.size)) {
+           isCoveredByHigherWindow(
+            anchorFrame: anchorFrame,
+            panelFrame: CGRect(origin: origin, size: panel.frame.size),
+            placementMode: resolvedAttachment.placementMode
+           ) {
             updateHealth(.hidden)
             controlsPanel.orderOut(nil)
             panel.orderOut(nil)
             return
         }
+
+        applyResolvedAttachment(resolvedAttachment, origin: origin)
+        updateHealth(resolvedAttachment.health)
 
         if isDraggingBackground {
             syncControlsPanelVisibility()
@@ -3562,7 +3655,6 @@ final class StackOverlayPanelController {
             return
         }
 
-        applyResolvedAttachment(resolvedAttachment, origin: origin)
         syncControlsPanelVisibility()
         panel.orderFrontRegardless()
     }
@@ -3602,7 +3694,9 @@ final class StackOverlayPanelController {
             placementPreference: placementPreference,
             preferredDockPosition: preferredDockPosition,
             horizontalOffset: horizontalAnchorOffset,
-            verticalOffset: verticalAnchorOffset
+            verticalOffset: verticalAnchorOffset,
+            floatingHorizontalOffset: floatingHorizontalOffset,
+            floatingVerticalOffset: floatingVerticalOffset
         )
     }
 
@@ -3631,6 +3725,11 @@ final class StackOverlayPanelController {
     private func applyResolvedAttachment(_ attachment: StackOverlayResolvedAttachment, origin: CGPoint) {
         if let anchorFrame = attachment.anchorFrame {
             lastAnchorFrame = anchorFrame
+        }
+
+        if placementMode != attachment.placementMode {
+            placementMode = attachment.placementMode
+            updateRootView()
         }
 
         if dockPosition != attachment.dockPosition {
@@ -3973,7 +4072,11 @@ final class StackOverlayPanelController {
         )
     }
 
-    private func isCoveredByHigherWindow(anchorFrame: CGRect, panelFrame: CGRect) -> Bool {
+    private func isCoveredByHigherWindow(
+        anchorFrame: CGRect,
+        panelFrame: CGRect,
+        placementMode: StackOverlayPlacementMode
+    ) -> Bool {
         guard let windowList = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements],
             kCGNullWindowID
@@ -3996,10 +4099,15 @@ final class StackOverlayPanelController {
                 return false
             }
 
-            if windowFrame.intersects(panelFrame) ||
-                intersectionArea(windowFrame, anchorFrame) > anchorFrameArea(anchorFrame) * 0.1 ||
-                isFullscreenLike(windowFrame, near: anchorFrame) {
+            if windowFrame.intersects(panelFrame) {
                 return true
+            }
+
+            if placementMode == .edgeDocked {
+                if intersectionArea(windowFrame, anchorFrame) > anchorFrameArea(anchorFrame) * 0.1 ||
+                    isFullscreenLike(windowFrame, near: anchorFrame) {
+                    return true
+                }
             }
         }
 
@@ -4107,25 +4215,31 @@ final class StackOverlayPanelController {
             isUpdatingPosition = false
         }
 
-        // Reverted to previous working model (offset from center/reference point)
-        // so that drag-and-drop feels correct again.
-        switch dockPosition {
-        case .top, .bottom:
-            let anchoredX = anchorFrame.midX - panel.frame.width / 2
-            horizontalAnchorOffset = panel.frame.minX - anchoredX
-            OverlayAttachmentPreference.setHorizontalOffset(
-                horizontalAnchorOffset,
-                bundleIdentifier: appBundleIdentifier,
-                appName: appName
-            )
-        case .left, .right:
-            let anchoredY = anchorFrame.maxY - panel.frame.height - edgeInset
-            verticalAnchorOffset = panel.frame.minY - anchoredY
-            OverlayAttachmentPreference.setVerticalOffset(
-                verticalAnchorOffset,
-                bundleIdentifier: appBundleIdentifier,
-                appName: appName
-            )
+        if placementMode == .floatingInWindow {
+            let inset = WindowAttachmentEngine.floatingDefaultInset
+            floatingHorizontalOffset = panel.frame.minX - (anchorFrame.minX + inset)
+            floatingVerticalOffset = panel.frame.minY - (anchorFrame.minY + inset)
+        } else {
+            // Reverted to previous working model (offset from center/reference point)
+            // so that drag-and-drop feels correct again.
+            switch dockPosition {
+            case .top, .bottom:
+                let anchoredX = anchorFrame.midX - panel.frame.width / 2
+                horizontalAnchorOffset = panel.frame.minX - anchoredX
+                OverlayAttachmentPreference.setHorizontalOffset(
+                    horizontalAnchorOffset,
+                    bundleIdentifier: appBundleIdentifier,
+                    appName: appName
+                )
+            case .left, .right:
+                let anchoredY = anchorFrame.maxY - panel.frame.height - edgeInset
+                verticalAnchorOffset = panel.frame.minY - anchoredY
+                OverlayAttachmentPreference.setVerticalOffset(
+                    verticalAnchorOffset,
+                    bundleIdentifier: appBundleIdentifier,
+                    appName: appName
+                )
+            }
         }
 
         let nextHorizontalSide: StackOverlayHorizontalSide = panel.frame.midX < anchorFrame.midX ? .left : .right
@@ -4154,6 +4268,8 @@ final class StackOverlayPanelController {
     func resetPosition() {
         horizontalAnchorOffset = 0
         verticalAnchorOffset = 0
+        floatingHorizontalOffset = 0
+        floatingVerticalOffset = 0
         OverlayAttachmentPreference.resetOffset(
             bundleIdentifier: appBundleIdentifier,
             appName: appName

@@ -17,12 +17,45 @@ struct MenuApplicationSnapshot: Identifiable {
         if isWidgetHidden { return StackOverlayHealth.hidden.surfaceTitle }
         return (overlayHealth ?? .visible).surfaceTitle
     }
+
+    var statusSystemImage: String {
+        guard isActive else { return "circle" }
+        if isWidgetHidden { return "eye.slash.circle.fill" }
+
+        switch overlayHealth ?? .visible {
+        case .visible:
+            return "checkmark.circle.fill"
+        case .floatingOnMaximized:
+            return "arrow.up.left.and.arrow.down.right"
+        case .hidden:
+            return "eye.slash.circle.fill"
+        case .clamped, .missingAnchor, .permissionBlocked, .degraded:
+            return "exclamationmark.circle.fill"
+        case .minimizedOrFullscreen, .unsupportedState:
+            return "minus.circle.fill"
+        }
+    }
+
+    var statusTint: Color {
+        guard isActive else { return .secondary }
+        if isWidgetHidden { return .secondary }
+
+        switch overlayHealth ?? .visible {
+        case .visible, .floatingOnMaximized:
+            return .accentColor
+        case .hidden, .minimizedOrFullscreen, .unsupportedState:
+            return .secondary
+        case .clamped, .missingAnchor, .permissionBlocked, .degraded:
+            return .orange
+        }
+    }
 }
 
 final class MenuBarStateStore: ObservableObject {
     @Published var eligibleApps: [MenuApplicationSnapshot] = []
     @Published var activeStackCount = 0
     @Published var degradedStackCount = 0
+    @Published var floatingStackCount = 0
     @Published var overlayHidden = UserDefaults.standard.bool(forKey: OverlayShortcutPreference.hiddenKey)
     @Published var overlayShortcutDescription = ""
     @Published var stackJumpShortcutDescription = ""
@@ -200,6 +233,11 @@ final class MenuBarStateStore: ObservableObject {
         }
         .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 
+        let newFloating = snapshot.activeStacks.filter { $0.overlayHealth == .floatingOnMaximized }.count
+        if newFloating != floatingStackCount {
+            floatingStackCount = newFloating
+        }
+
         let newDegraded = eligibleApps.filter { $0.isActive && $0.overlayHealth == .degraded }.count
         if newDegraded != degradedStackCount {
             degradedStackCount = newDegraded
@@ -311,8 +349,8 @@ struct StackerMenuBarContent: View {
                                 Text(app.name)
                                 Spacer()
                                 if app.isActive {
-                                    Image(systemName: app.statusTitle == "Live" ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                                        .foregroundStyle(app.statusTitle == "Live" ? Color.accentColor : Color.orange)
+                                    Image(systemName: app.statusSystemImage)
+                                        .foregroundStyle(app.statusTint)
                                 }
                             }
                         } icon: {
@@ -328,6 +366,10 @@ struct StackerMenuBarContent: View {
             if state.degradedStackCount > 0 {
                 Label("\(state.degradedStackCount) stack(s) need attention", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
+            }
+            if state.floatingStackCount > 0 {
+                Label("Switcher floating on maximized window", systemImage: "arrow.up.left.and.arrow.down.right")
+                    .foregroundStyle(.secondary)
             }
             if state.overlayHidden {
                 Label("Window Widgets Hidden", systemImage: "eye.slash")
@@ -358,6 +400,7 @@ struct StackerMenuBarContent: View {
 struct StackerMenuBarLabel: View {
     let count: Int
     let degradedCount: Int
+    let floatingCount: Int
 
     private var menuBarIcon: NSImage {
         // Standard and most reliable way for macOS menu bar apps:
@@ -390,14 +433,28 @@ struct StackerMenuBarLabel: View {
     }
 
     var body: some View {
-        Label {
-            Text("\(count)")
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-        } icon: {
-            Image(nsImage: menuBarIcon)
-                // Full color app icon (no template) so the real Stacker icon appears in the menu bar
-                // .renderingMode(.template) removed because it was making the icon invisible/monochrome in many cases
+        ZStack(alignment: .topTrailing) {
+            Label {
+                Text("\(count)")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+            } icon: {
+                Image(nsImage: menuBarIcon)
+            }
+            .labelStyle(.titleAndIcon)
+
+            if floatingCount > 0 {
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 6, height: 6)
+                    .offset(x: 2, y: -2)
+                    .accessibilityLabel("Switcher floating on maximized window")
+            } else if degradedCount > 0 {
+                Circle()
+                    .fill(Color.orange)
+                    .frame(width: 6, height: 6)
+                    .offset(x: 2, y: -2)
+                    .accessibilityLabel("Paused stacks need attention")
+            }
         }
-        .labelStyle(.titleAndIcon)
     }
 }

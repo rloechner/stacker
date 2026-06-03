@@ -1,6 +1,6 @@
 # Stacker
 
-**⬇️ [Download Stacker v1.1.5 for macOS (DMG)](https://github.com/rloechner/stacker/releases/download/v1.1.5/Stacker-1.1.5.dmg)**
+**⬇️ [Download Stacker v1.1.6 for macOS (DMG)](https://github.com/rloechner/stacker/releases/download/v1.1.6/Stacker-1.1.6.dmg)**
 
 A tiny native macOS utility that turns multiple open browser windows into one live, aligned stack (with a handy widget for switching).
 
@@ -109,7 +109,8 @@ The widget uses dots or labels for stacked windows:
 - active windows appear emphasized;
 - inactive windows stay available;
 - minimized windows become a yellow circle with a dash and can be restored from the widget;
-- fullscreen windows show a fullscreen marker and remain part of the stack, but are not used as widget anchors.
+- fullscreen windows show a fullscreen marker and remain part of the stack, but are not used as widget anchors;
+- maximized windows (green button, not Spaces fullscreen) float the switcher inside the browser window; drag it to move, or turn this off in Settings.
 
 Right-click a window dot to focus, minimize, restore, or remove that window from the stack. Remove uses an `xmark`; minimize uses the macOS-style yellow dash state so the two actions are visually distinct.
 
@@ -127,7 +128,8 @@ The menu bar extra provides quick access to:
 ## Known Limitations
 
 - Stacker is focused on browser windows, not arbitrary Mac apps.
-- Fullscreen browser windows are treated as recoverable stack members, but are not used for active widget anchoring in v1.0.
+- Spaces fullscreen browser windows are treated as recoverable stack members, but are not used for active widget anchoring in v1.0.
+- Maximized (non-fullscreen) windows use in-window floating placement when edge docking has no room.
 - Browser Accessibility behavior can vary by browser version and macOS release.
 - Stacker does not save browser sessions or reopen closed windows.
 - Unsigned or locally built copies may trigger extra macOS security prompts.
@@ -177,6 +179,7 @@ Recommended manual test pass before release:
 - hide and show each browser;
 - minimize and restore a stacked window;
 - enter and exit fullscreen;
+- maximize and un-maximize a stacked browser window (verify floating switcher appears and returns to edge dock);
 - sleep and wake the Mac;
 - unplug external monitors and return to laptop mode;
 - move a stack between mixed-resolution displays;

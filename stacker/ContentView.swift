@@ -130,6 +130,10 @@ struct ContentView: View {
     }
 
     var body: some View {
+        contentBodyWithSystemNotifications
+    }
+
+    private var contentBodyWithCoreLifecycle: some View {
         contentBody
             .padding()
             .frame(minWidth: presentation == .popover ? 320 : 420, maxWidth: .infinity, alignment: .leading)
@@ -178,6 +182,13 @@ struct ContentView: View {
                     startRefreshTimerIfNeeded()
                 }
             }
+            .onDisappear {
+                handleDisappear()
+            }
+    }
+
+    private var contentBodyWithOverlayPreferences: some View {
+        contentBodyWithCoreLifecycle
             .onReceive(NotificationCenter.default.publisher(for: .stackerOverlayPaletteDidChange)) { _ in
                 DispatchQueue.main.async {
                     applyCurrentWidgetPalette()
@@ -193,10 +204,15 @@ struct ContentView: View {
                     applyCurrentWidgetPlacement()
                 }
             }
-            .onDisappear {
-                handleDisappear()
+            .onReceive(NotificationCenter.default.publisher(for: .stackerMaximizedOverlayPreferenceDidChange)) { _ in
+                DispatchQueue.main.async {
+                    applyMaximizedOverlayPreference()
+                }
             }
+    }
 
+    private var contentBodyWithSystemNotifications: some View {
+        contentBodyWithOverlayPreferences
             // Auto-refresh eligible browsers list when apps launch or terminate.
             // This makes the sidebar update live when the user opens a new supported browser.
             .onReceive(NotificationCenter.default.publisher(for: NSWorkspace.didLaunchApplicationNotification)) { notification in
@@ -1015,6 +1031,13 @@ struct ContentView: View {
     private func applyCurrentWidgetAppearance() {
         activeStackSessions.forEach { session in
             runtimeCoordinator.applyCurrentAppearance(to: session)
+            refreshOverlay(for: session)
+        }
+        postSidebarSnapshot()
+    }
+
+    private func applyMaximizedOverlayPreference() {
+        activeStackSessions.forEach { session in
             refreshOverlay(for: session)
         }
         postSidebarSnapshot()

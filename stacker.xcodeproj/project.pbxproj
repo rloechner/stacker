@@ -6,7 +6,29 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		94BAB1A02F7F010000FBF7C4 /* BrowserSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94BAB1A32F7F010000FBF7C4 /* BrowserSupportTests.swift */; };
+		94BAB1A12F7F010000FBF7C4 /* StackJumpShortcutLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94BAB1A42F7F010000FBF7C4 /* StackJumpShortcutLogicTests.swift */; };
+		94BAB1A22F7F010000FBF7C4 /* StackerSessionStoreLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94BAB1A52F7F010000FBF7C4 /* StackerSessionStoreLogicTests.swift */; };
+		94BAB1922F7F000000FBF7C4 /* WindowAttachmentEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94BAB1912F7F000000FBF7C4 /* WindowAttachmentEngineTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		94BAB19A2F7F000000FBF7C4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 94BAB1692F7EBA4800FBF7C4 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 94BAB1702F7EBA4800FBF7C4;
+			remoteInfo = stacker;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		94BAB1902F7F000000FBF7C4 /* StackerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = StackerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		94BAB1912F7F000000FBF7C4 /* WindowAttachmentEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAttachmentEngineTests.swift; sourceTree = "<group>"; };
+		94BAB1A32F7F010000FBF7C4 /* BrowserSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserSupportTests.swift; sourceTree = "<group>"; };
+		94BAB1A42F7F010000FBF7C4 /* StackJumpShortcutLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackJumpShortcutLogicTests.swift; sourceTree = "<group>"; };
+		94BAB1A52F7F010000FBF7C4 /* StackerSessionStoreLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackerSessionStoreLogicTests.swift; sourceTree = "<group>"; };
 		94BAB1712F7EBA4800FBF7C4 /* stacker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = stacker.app; path = Stacker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -26,6 +48,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		94BAB1952F7F000000FBF7C4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -33,6 +62,7 @@
 			isa = PBXGroup;
 			children = (
 				94BAB1732F7EBA4800FBF7C4 /* stacker */,
+				94BAB19C2F7F000000FBF7C4 /* StackerTests */,
 				94BAB1722F7EBA4800FBF7C4 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,8 +71,20 @@
 			isa = PBXGroup;
 			children = (
 				94BAB1712F7EBA4800FBF7C4 /* stacker.app */,
+				94BAB1902F7F000000FBF7C4 /* StackerTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		94BAB19C2F7F000000FBF7C4 /* StackerTests */ = {
+			isa = PBXGroup;
+			children = (
+				94BAB1A32F7F010000FBF7C4 /* BrowserSupportTests.swift */,
+				94BAB1A42F7F010000FBF7C4 /* StackJumpShortcutLogicTests.swift */,
+				94BAB1A52F7F010000FBF7C4 /* StackerSessionStoreLogicTests.swift */,
+				94BAB1912F7F000000FBF7C4 /* WindowAttachmentEngineTests.swift */,
+			);
+			path = StackerTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -70,6 +112,26 @@
 			productReference = 94BAB1712F7EBA4800FBF7C4 /* stacker.app */;
 			productType = "com.apple.product-type.application";
 		};
+		94BAB1932F7F000000FBF7C4 /* StackerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 94BAB1972F7F000000FBF7C4 /* Build configuration list for PBXNativeTarget "StackerTests" */;
+			buildPhases = (
+				94BAB1942F7F000000FBF7C4 /* Sources */,
+				94BAB1952F7F000000FBF7C4 /* Frameworks */,
+				94BAB1962F7F000000FBF7C4 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				94BAB19B2F7F000000FBF7C4 /* PBXTargetDependency */,
+			);
+			name = StackerTests;
+			packageProductDependencies = (
+			);
+			productName = StackerTests;
+			productReference = 94BAB1902F7F000000FBF7C4 /* StackerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -82,6 +144,10 @@
 				TargetAttributes = {
 					94BAB1702F7EBA4800FBF7C4 = {
 						CreatedOnToolsVersion = 26.4;
+					};
+					94BAB1932F7F000000FBF7C4 = {
+						CreatedOnToolsVersion = 26.4;
+						TestTargetID = 94BAB1702F7EBA4800FBF7C4;
 					};
 				};
 			};
@@ -100,12 +166,20 @@
 			projectRoot = "";
 			targets = (
 				94BAB1702F7EBA4800FBF7C4 /* stacker */,
+				94BAB1932F7F000000FBF7C4 /* StackerTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		94BAB16F2F7EBA4800FBF7C4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		94BAB1962F7F000000FBF7C4 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +196,26 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		94BAB1942F7F000000FBF7C4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				94BAB1A02F7F010000FBF7C4 /* BrowserSupportTests.swift in Sources */,
+				94BAB1A12F7F010000FBF7C4 /* StackJumpShortcutLogicTests.swift in Sources */,
+				94BAB1A22F7F010000FBF7C4 /* StackerSessionStoreLogicTests.swift in Sources */,
+				94BAB1922F7F000000FBF7C4 /* WindowAttachmentEngineTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		94BAB19B2F7F000000FBF7C4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 94BAB1702F7EBA4800FBF7C4 /* stacker */;
+			targetProxy = 94BAB19A2F7F000000FBF7C4 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		94BAB17A2F7EBA4900FBF7C4 /* Debug */ = {
@@ -255,7 +348,7 @@
 				CODE_SIGN_ENTITLEMENTS = stacker/stacker.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = 44N969GC55;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -275,7 +368,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.5;
+				MARKETING_VERSION = 1.1.6;
 				PRODUCT_BUNDLE_IDENTIFIER = "RHL-Studios.stacker";
 				PRODUCT_NAME = Stacker;
 				REGISTER_APP_GROUPS = YES;
@@ -303,7 +396,7 @@
 				CODE_SIGN_ENTITLEMENTS = stacker/stacker.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = 44N969GC55;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -323,7 +416,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.5;
+				MARKETING_VERSION = 1.1.6;
 				PRODUCT_BUNDLE_IDENTIFIER = "RHL-Studios.stacker";
 				PRODUCT_NAME = Stacker;
 				REGISTER_APP_GROUPS = YES;
@@ -339,6 +432,54 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		94BAB1982F7F000000FBF7C4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 44N969GC55;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "RHL-Studios.stacker.tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Stacker.app/Contents/MacOS/Stacker";
+			};
+			name = Debug;
+		};
+		94BAB1992F7F000000FBF7C4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 44N969GC55;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "RHL-Studios.stacker.tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Stacker.app/Contents/MacOS/Stacker";
 			};
 			name = Release;
 		};
@@ -359,6 +500,15 @@
 			buildConfigurations = (
 				94BAB17D2F7EBA4900FBF7C4 /* Debug */,
 				94BAB17E2F7EBA4900FBF7C4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		94BAB1972F7F000000FBF7C4 /* Build configuration list for PBXNativeTarget "StackerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				94BAB1982F7F000000FBF7C4 /* Debug */,
+				94BAB1992F7F000000FBF7C4 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

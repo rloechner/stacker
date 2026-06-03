@@ -37,6 +37,74 @@ enum OverlayShortcutPreference {
     static let defaultModifiers = Int(NSEvent.ModifierFlags.command.union(.option).rawValue)
 }
 
+enum MaximizedWindowOverlayOrientation: String, CaseIterable {
+    case horizontal
+    case vertical
+
+    var title: String {
+        switch self {
+        case .horizontal:
+            return "Horizontal"
+        case .vertical:
+            return "Vertical"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .horizontal:
+            return "rectangle.grid.1x2"
+        case .vertical:
+            return "rectangle.grid.1x2.fill"
+        }
+    }
+
+    var dockPosition: StackOverlayDockPosition {
+        switch self {
+        case .horizontal:
+            return .top
+        case .vertical:
+            return .left
+        }
+    }
+}
+
+enum MaximizedWindowOverlayPreference {
+    static let enabledKey = "stacker.maximizedWindowOverlayEnabled"
+    static let expandOnHoverKey = "stacker.maximizedWindowOverlayExpandOnHover"
+    static let orientationKey = "stacker.maximizedWindowOverlayOrientation"
+
+    static var isEnabled: Bool {
+        if UserDefaults.standard.object(forKey: enabledKey) == nil {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: enabledKey)
+    }
+
+    static var expandOnHover: Bool {
+        UserDefaults.standard.bool(forKey: expandOnHoverKey)
+    }
+
+    static var orientation: MaximizedWindowOverlayOrientation {
+        MaximizedWindowOverlayOrientation(rawValue: UserDefaults.standard.string(forKey: orientationKey) ?? "")
+            ?? .horizontal
+    }
+
+    static func setOrientation(_ orientation: MaximizedWindowOverlayOrientation) {
+        UserDefaults.standard.set(orientation.rawValue, forKey: orientationKey)
+        NotificationCenter.default.post(name: .stackerMaximizedOverlayPreferenceDidChange, object: nil)
+    }
+
+    static func ensureDefaults() {
+        if UserDefaults.standard.object(forKey: enabledKey) == nil {
+            UserDefaults.standard.set(true, forKey: enabledKey)
+        }
+        if UserDefaults.standard.object(forKey: orientationKey) == nil {
+            UserDefaults.standard.set(MaximizedWindowOverlayOrientation.horizontal.rawValue, forKey: orientationKey)
+        }
+    }
+}
+
 enum StackerAppWindowActions {
     private static var adminWindows: [NSWindow] {
         NSApp.windows.filter { $0.identifier == .stackerAdminWindow }
@@ -82,6 +150,7 @@ enum OverlayShortcutState {
         }
 
         StackJumpShortcutState.ensureDefaults()
+        MaximizedWindowOverlayPreference.ensureDefaults()
     }
 
     static func isHidden() -> Bool {

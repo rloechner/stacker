@@ -10,6 +10,8 @@ struct OverlayShortcutSettingsView: View {
     @AppStorage(StackOverlayAppearancePreference.key) private var widgetAppearanceRawValue = StackOverlayAppearance.system.rawValue
     @AppStorage(StackOverlayDotPalettePreference.key) private var dotPaletteRawValue = StackOverlayDotPalette.classic.rawValue
     @AppStorage(StackOverlayPlacementPreferenceStore.key) private var placementRawValue = StackOverlayPlacementPreference.top.rawValue
+    @AppStorage(MaximizedWindowOverlayPreference.enabledKey) private var maximizedOverlayEnabled = true
+    @AppStorage(MaximizedWindowOverlayPreference.expandOnHoverKey) private var maximizedOverlayExpandOnHover = false
     @State private var accessibilityTrusted = AccessibilityPermissionSupport.isProcessTrusted
     @State private var showPostUpdateAccessibilityHint = false
 
@@ -110,6 +112,16 @@ struct OverlayShortcutSettingsView: View {
                 NotificationCenter.default.post(name: .stackerOverlayPlacementDidChange, object: nil)
             }
         }
+        .onChange(of: maximizedOverlayEnabled) { _, _ in
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .stackerMaximizedOverlayPreferenceDidChange, object: nil)
+            }
+        }
+        .onChange(of: maximizedOverlayExpandOnHover) { _, _ in
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .stackerMaximizedOverlayPreferenceDidChange, object: nil)
+            }
+        }
     }
 
     private var settingsControls: some View {
@@ -177,6 +189,11 @@ struct OverlayShortcutSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                Toggle("Show switcher on maximized windows", isOn: $maximizedOverlayEnabled)
+
+                Toggle("Expand switcher on hover (maximized only)", isOn: $maximizedOverlayExpandOnHover)
+                    .disabled(!maximizedOverlayEnabled)
             }
             .padding(.top, 2)
         } label: {

@@ -1,12 +1,18 @@
 import AppKit
 import CoreGraphics
 
+enum StackOverlayPlacementMode: Equatable {
+    case edgeDocked
+    case floatingInWindow
+}
+
 enum StackOverlayHealth: String {
     case visible
     case hidden
     case clamped
     case missingAnchor
     case minimizedOrFullscreen
+    case floatingOnMaximized
     case permissionBlocked
     case unsupportedState
     case degraded
@@ -23,6 +29,8 @@ enum StackOverlayHealth: String {
             return "Needs Attention"
         case .minimizedOrFullscreen:
             return "Unsupported State"
+        case .floatingOnMaximized:
+            return "Floating"
         case .permissionBlocked:
             return "Needs Attention"
         case .unsupportedState:
@@ -44,6 +52,8 @@ enum StackOverlayHealth: String {
             return "Stacker cannot find the active window to place the marker."
         case .minimizedOrFullscreen:
             return "The active stack window is minimized or fullscreen, which is outside v1 support."
+        case .floatingOnMaximized:
+            return "The switcher is floating inside the maximized browser window. Drag it to move."
         case .permissionBlocked:
             return "Accessibility permission is required to keep this stack attached."
         case .unsupportedState:
@@ -57,7 +67,16 @@ enum StackOverlayHealth: String {
         switch self {
         case .clamped, .missingAnchor, .permissionBlocked, .degraded:
             return true
-        case .visible, .hidden, .minimizedOrFullscreen, .unsupportedState:
+        case .visible, .hidden, .minimizedOrFullscreen, .floatingOnMaximized, .unsupportedState:
+            return false
+        }
+    }
+
+    var isWidgetDisplayed: Bool {
+        switch self {
+        case .visible, .clamped, .floatingOnMaximized:
+            return true
+        case .hidden, .missingAnchor, .minimizedOrFullscreen, .permissionBlocked, .unsupportedState, .degraded:
             return false
         }
     }
@@ -85,6 +104,7 @@ struct StackOverlayResolvedAttachment {
     let origin: CGPoint?
     let dockPosition: StackOverlayDockPosition
     let horizontalSide: StackOverlayHorizontalSide
+    let placementMode: StackOverlayPlacementMode
 }
 
 struct WindowAttachmentEngine {
@@ -93,6 +113,23 @@ struct WindowAttachmentEngine {
     var sideGap: CGFloat = 0
     var topGap: CGFloat = 0
     var bottomGap: CGFloat = 0
+    static let floatingDefaultInset: CGFloat = 14
+    static let maximizedFillThreshold: CGFloat = 0.92
+    private static let unsetHorizontalOffsetSentinel: CGFloat = -100_000
+
+    /// True when the anchor nearly fills the screen visible area (green-button maximize), not Spaces fullscreen.
+    static func isMaximizedLike(anchorFrame: CGRect, visibleFrame: CGRect) -> Bool {
+        let intersection = anchorFrame.intersection(visibleFrame)
+        guard intersection.width > 0, intersection.height > 0 else { return false }
+
+        let visibleArea = max(1, visibleFrame.width * visibleFrame.height)
+        let intersectionArea = intersection.width * intersection.height
+        guard intersectionArea / visibleArea >= maximizedFillThreshold else { return false }
+
+        let widthRatio = intersection.width / max(1, visibleFrame.width)
+        let heightRatio = intersection.height / max(1, visibleFrame.height)
+        return widthRatio >= maximizedFillThreshold && heightRatio >= maximizedFillThreshold
+    }
 
     func resolve(
         state: StackOverlayAttachmentState,
@@ -101,7 +138,9 @@ struct WindowAttachmentEngine {
         placementPreference: StackOverlayPlacementPreference,
         preferredDockPosition: StackOverlayDockPosition,
         horizontalOffset: CGFloat,
-        verticalOffset: CGFloat
+        verticalOffset: CGFloat,
+        floatingHorizontalOffset: CGFloat = 0,
+        floatingVerticalOffset: CGFloat = 0
     ) -> StackOverlayResolvedAttachment {
         let fallbackDockPosition = placementPreference.dockPosition ?? preferredDockPosition
         guard state.health == .visible || state.health == .clamped else {
@@ -111,7 +150,8 @@ struct WindowAttachmentEngine {
                 visibleFrame: nil,
                 origin: nil,
                 dockPosition: fallbackDockPosition,
-                horizontalSide: .left
+                horizontalSide: .left,
+                placementMode: .edgeDocked
             )
         }
 
@@ -122,7 +162,8 @@ struct WindowAttachmentEngine {
                 visibleFrame: nil,
                 origin: nil,
                 dockPosition: fallbackDockPosition,
-                horizontalSide: .left
+                horizontalSide: .left,
+                placementMode: .edgeDocked
             )
         }
 
@@ -134,7 +175,29 @@ struct WindowAttachmentEngine {
                 visibleFrame: nil,
                 origin: nil,
                 dockPosition: fallbackDockPosition,
-                horizontalSide: .left
+                horizontalSide: .left,
+                placementMode: .edgeDocked
+            )
+        }
+
+        if !hasVisibleRoomForWidget(anchorFrame: anchorFrame, visibleFrame: visibleFrame, panelSize: panelSize),
+           MaximizedWindowOverlayPreference.isEnabled,
+           Self.isMaximizedLike(anchorFrame: anchorFrame, visibleFrame: visibleFrame) {
+            let floatingDockPosition = MaximizedWindowOverlayPreference.orientation.dockPosition
+            let origin = clampedFloatingOrigin(
+                for: anchorFrame,
+                panelSize: panelSize,
+                horizontalOffset: floatingHorizontalOffset,
+                verticalOffset: floatingVerticalOffset
+            )
+            return StackOverlayResolvedAttachment(
+                health: .floatingOnMaximized,
+                anchorFrame: anchorFrame,
+                visibleFrame: visibleFrame,
+                origin: origin,
+                dockPosition: floatingDockPosition,
+                horizontalSide: .left,
+                placementMode: .floatingInWindow
             )
         }
 
@@ -145,7 +208,8 @@ struct WindowAttachmentEngine {
                 visibleFrame: visibleFrame,
                 origin: nil,
                 dockPosition: fallbackDockPosition,
-                horizontalSide: .left
+                horizontalSide: .left,
+                placementMode: .edgeDocked
             )
         }
 
@@ -177,7 +241,30 @@ struct WindowAttachmentEngine {
             visibleFrame: visibleFrame,
             origin: origin,
             dockPosition: dockPosition,
-            horizontalSide: horizontalSide
+            horizontalSide: horizontalSide,
+            placementMode: .edgeDocked
+        )
+    }
+
+    private func effectiveFloatingHorizontalOffset(_ horizontalOffset: CGFloat) -> CGFloat {
+        horizontalOffset <= Self.unsetHorizontalOffsetSentinel + 1 ? 0 : horizontalOffset
+    }
+
+    func clampedFloatingOrigin(
+        for anchorFrame: CGRect,
+        panelSize: CGSize,
+        horizontalOffset: CGFloat,
+        verticalOffset: CGFloat
+    ) -> CGPoint {
+        let inset = Self.floatingDefaultInset
+        let extraX = effectiveFloatingHorizontalOffset(horizontalOffset)
+        let proposed = CGPoint(
+            x: anchorFrame.minX + inset + extraX,
+            y: anchorFrame.minY + inset + verticalOffset
+        )
+        return CGPoint(
+            x: min(max(proposed.x, anchorFrame.minX + inset), anchorFrame.maxX - panelSize.width - inset),
+            y: min(max(proposed.y, anchorFrame.minY + inset), anchorFrame.maxY - panelSize.height - inset)
         )
     }
 
