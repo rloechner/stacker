@@ -18,6 +18,21 @@ enum AccessibilityPermissionSupport {
         _ = AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
     }
 
+    /// Makes TCC record Stacker in the Accessibility list (toggle off) without
+    /// showing the system "Accessibility Access" dialog, by attempting a harmless
+    /// AX query against another process. Lets onboarding deep-link the user to a
+    /// System Settings pane where Stacker is already listed.
+    static func registerInAccessibilityListSilently() {
+        guard !isProcessTrusted else { return }
+        let target = NSWorkspace.shared.frontmostApplication
+            ?? NSWorkspace.shared.runningApplications.first { $0.activationPolicy == .regular }
+        guard let target else { return }
+
+        let element = AXUIElementCreateApplication(target.processIdentifier)
+        var value: CFTypeRef?
+        _ = AXUIElementCopyAttributeValue(element, kAXWindowsAttribute as CFString, &value)
+    }
+
     static func openSystemSettings() {
         let urls = [
             "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",

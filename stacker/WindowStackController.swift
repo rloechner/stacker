@@ -688,6 +688,17 @@ final class WindowStackController {
             return .hidden
         }
 
+        // Non-activating panels (Spotlight, Raycast, menu-bar popovers) take keyboard
+        // focus without changing NSWorkspace's frontmost application. AX errors are
+        // treated as "no change" so transient hiccups don't flicker the widget.
+        // When the user right-clicks the widget, focus briefly moves to Stacker itself;
+        // that must not hide the overlay or the context menu cannot stay open.
+        if let focusedAppPID = systemFocusedApplicationPID(),
+           focusedAppPID != appPID,
+           focusedAppPID != NSRunningApplication.current.processIdentifier {
+            return .hidden
+        }
+
         guard let activeID = focusedStackWindowIDForOverlay() else {
             return .hidden
         }
@@ -719,6 +730,27 @@ final class WindowStackController {
         return .missingAnchor
     }
 
+    private func isStackerOwnedAXElement(_ element: AXUIElement) -> Bool {
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(element, &pid) == .success else { return false }
+        return pid == NSRunningApplication.current.processIdentifier
+    }
+
+    private func systemFocusedApplicationPID() -> pid_t? {
+        let systemWideElement = AXUIElementCreateSystemWide()
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(systemWideElement, kAXFocusedApplicationAttribute as CFString, &value) == .success,
+              let focusedApp = AXUIElement.from(value) else {
+            return nil
+        }
+
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(focusedApp, &pid) == .success, pid > 0 else {
+            return nil
+        }
+        return pid
+    }
+
     private func focusedStackWindowIDForOverlay() -> UInt? {
         if !groupedWindows.isEmpty {
             let systemWideElement = AXUIElementCreateSystemWide()
@@ -729,6 +761,9 @@ final class WindowStackController {
                 if let match = groupedWindowID(matching: focusedWindow) {
                     selectedWindowID = match
                     return match
+                }
+                if isStackerOwnedAXElement(focusedWindow) {
+                    return selectedWindowID ?? groupedWindows.first?.id
                 }
                 return nil
             }

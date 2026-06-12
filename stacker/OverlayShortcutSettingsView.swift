@@ -58,22 +58,14 @@ struct OverlayShortcutSettingsView: View {
     }
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 16) {
-                settingsControls
-                    .frame(minWidth: 360, maxWidth: 430, alignment: .topLeading)
-
-                previewSection
-                    .frame(width: 260)
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                settingsControls
-                previewSection
-            }
+        Form {
+            previewSection
+            lookSection
+            widgetSection
+            shortcutsSection
+            accessibilitySection
         }
-        .padding(18)
-        .frame(maxWidth: 720, alignment: .topLeading)
+        .formStyle(.grouped)
         .onAppear {
             refreshAccessibilityStatus()
             showPostUpdateAccessibilityHint =
@@ -124,99 +116,77 @@ struct OverlayShortcutSettingsView: View {
         }
     }
 
-    private var settingsControls: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header
-            lookSection
-            widgetSection
-            controlsSection
-        }
-    }
-
     private var previewSection: some View {
-        WidgetPreviewSection(
-            palette: selectedPalette,
-            appearance: selectedWidgetAppearance,
-            dockPosition: previewDockPosition,
-            usesAutomaticPlacement: selectedPlacement == .automatic
-        )
-    }
+        Section {
+            VStack(spacing: 6) {
+                WidgetPreviewCanvas(
+                    palette: selectedPalette,
+                    appearance: selectedWidgetAppearance,
+                    dockPosition: previewDockPosition
+                )
+                .overlayColorScheme(selectedWidgetAppearance)
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Stacker")
-                .font(.title2.weight(.semibold))
-            Text("Keep the widget quiet, readable, and quick to reach.")
-                .font(.subheadline)
+                Label(
+                    selectedPlacement == .automatic ? "Auto edge preview" : "\(previewDockPosition.buttonTitle) edge",
+                    systemImage: previewDockPosition.buttonIcon
+                )
+                .font(.caption)
                 .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 2)
         }
     }
 
     private var lookSection: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
-                Picker("Widget appearance", selection: $widgetAppearanceRawValue) {
-                    ForEach(StackOverlayAppearance.allCases, id: \.rawValue) { appearance in
-                        Text(appearance.title).tag(appearance.rawValue)
-                    }
+        Section("Look") {
+            Picker("Widget appearance", selection: $widgetAppearanceRawValue) {
+                ForEach(StackOverlayAppearance.allCases, id: \.rawValue) { appearance in
+                    Text(appearance.title).tag(appearance.rawValue)
                 }
-                .pickerStyle(.segmented)
-
-                palettePicker
             }
-            .padding(.top, 2)
-        } label: {
-            Label("Look", systemImage: "paintpalette")
+            .pickerStyle(.segmented)
+
+            palettePicker
         }
     }
 
     private var widgetSection: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 14) {
-                Picker("Edge", selection: $placementRawValue) {
-                    ForEach(StackOverlayPlacementPreference.allCases, id: \.rawValue) { placement in
-                        Text(placement.title).tag(placement.rawValue)
-                    }
+        Section("Widget") {
+            Picker("Edge", selection: $placementRawValue) {
+                ForEach(StackOverlayPlacementPreference.allCases, id: \.rawValue) { placement in
+                    Text(placement.title).tag(placement.rawValue)
                 }
-                .pickerStyle(.segmented)
-
-                HStack(spacing: 10) {
-                    Button(overlayHidden ? "Show Widgets Now" : "Hide Widgets Now") {
-                        overlayHidden = OverlayShortcutState.toggleVisibility()
-                    }
-
-                    Text("Shortcut: \(shortcutPreview)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Toggle("Show switcher on maximized windows", isOn: $maximizedOverlayEnabled)
-
-                Toggle("Expand switcher on hover (maximized only)", isOn: $maximizedOverlayExpandOnHover)
-                    .disabled(!maximizedOverlayEnabled)
             }
-            .padding(.top, 2)
-        } label: {
-            Label("Widget", systemImage: "capsule")
+            .pickerStyle(.segmented)
+
+            Toggle("Show switcher on maximized windows", isOn: $maximizedOverlayEnabled)
+
+            Toggle("Expand switcher on hover (maximized only)", isOn: $maximizedOverlayExpandOnHover)
+                .disabled(!maximizedOverlayEnabled)
+
+            LabeledContent {
+                Button(overlayHidden ? "Show Widgets Now" : "Hide Widgets Now") {
+                    overlayHidden = OverlayShortcutState.toggleVisibility()
+                }
+            } label: {
+                Text("Visibility")
+                Text("Shortcut: \(shortcutPreview)")
+            }
         }
     }
 
-    private var controlsSection: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
-                shortcutEditor
+    private var shortcutsSection: some View {
+        Section("Shortcuts") {
+            shortcutEditor
 
-                Divider()
+            stackJumpShortcutEditor
+        }
+    }
 
-                stackJumpShortcutEditor
-
-                Divider()
-
-                accessibilityRow
-            }
-            .padding(.top, 2)
-        } label: {
-            Label("Controls", systemImage: "keyboard")
+    private var accessibilitySection: some View {
+        Section("Accessibility") {
+            accessibilityRow
         }
     }
 
@@ -316,33 +286,37 @@ struct OverlayShortcutSettingsView: View {
     }
 
     private var palettePicker: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Picker("Widget dots", selection: $dotPaletteRawValue) {
-                ForEach(StackOverlayDotPalette.allCases) { palette in
-                    Text(palette.title).tag(palette.rawValue)
+        LabeledContent("Widget dots") {
+            HStack(spacing: 12) {
+                HStack(spacing: 6) {
+                    ForEach(Array(selectedPalette.accents.enumerated()), id: \.offset) { _, accent in
+                        Circle()
+                            .fill(accent.tint)
+                            .frame(width: 13, height: 13)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+                            )
+                    }
                 }
-            }
-            .pickerStyle(.menu)
-            .frame(width: 180)
 
-            HStack(spacing: 7) {
-                ForEach(Array(selectedPalette.accents.enumerated()), id: \.offset) { _, accent in
-                    Circle()
-                        .fill(accent.tint)
-                        .frame(width: 14, height: 14)
-                        .overlay(
-                            Circle()
-                                .stroke(Color.primary.opacity(0.10), lineWidth: 1)
-                        )
+                Picker("Widget dots", selection: $dotPaletteRawValue) {
+                    ForEach(StackOverlayDotPalette.allCases) { palette in
+                        Text(palette.title).tag(palette.rawValue)
+                    }
                 }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
             }
-
-            Spacer()
         }
     }
 
     private var shortcutEditor: some View {
         VStack(alignment: .leading, spacing: 10) {
+            Text("Hide or show all widgets")
+                .font(.callout.weight(.medium))
+
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .center, spacing: 12) {
                     shortcutKeyPicker
@@ -448,38 +422,6 @@ struct OverlayShortcutSettingsView: View {
 
     private func refreshAccessibilityStatus() {
         accessibilityTrusted = AccessibilityPermissionCoordinator.refreshTrustState(postOnChangeOnly: true)
-    }
-}
-
-private struct WidgetPreviewSection: View {
-    let palette: StackOverlayDotPalette
-    let appearance: StackOverlayAppearance
-    let dockPosition: StackOverlayDockPosition
-    let usesAutomaticPlacement: Bool
-
-    var body: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 14) {
-                WidgetPreviewCanvas(
-                    palette: palette,
-                    appearance: appearance,
-                    dockPosition: dockPosition
-                )
-                    .frame(maxWidth: .infinity)
-                    .overlayColorScheme(appearance)
-
-                HStack(spacing: 8) {
-                    Label(usesAutomaticPlacement ? "Auto edge preview" : "\(dockPosition.buttonTitle) edge", systemImage: dockPosition.buttonIcon)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Spacer()
-                }
-            }
-            .padding(.top, 2)
-        } label: {
-            Label("Preview", systemImage: "rectangle.on.rectangle")
-        }
     }
 }
 

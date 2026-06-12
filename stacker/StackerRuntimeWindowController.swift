@@ -48,8 +48,23 @@ final class StackerAppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             AccessibilityPermissionCoordinator.start()
             _ = AccessibilityPermissionCoordinator.refreshTrustState()
+            AccessibilityPermissionSupport.registerInAccessibilityListSilently()
             presentInstallLocationWarningIfNeeded()
             runtimeWindowController.startIfNeeded()
+            bringAdminWindowFrontIfPermissionMissing()
+        }
+    }
+
+    @MainActor
+    private func bringAdminWindowFrontIfPermissionMissing() {
+        guard !AccessibilityPermissionSupport.isProcessTrusted else { return }
+
+        // The admin window hosts the Accessibility onboarding pane; surface it
+        // so first-launch users see how to grant permission. Slight delay lets
+        // the SwiftUI WindowGroup finish creating its window.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            guard !AccessibilityPermissionSupport.isProcessTrusted else { return }
+            StackerAppWindowActions.openMainWindow()
         }
     }
 

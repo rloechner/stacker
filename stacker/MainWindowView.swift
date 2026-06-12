@@ -76,6 +76,7 @@ struct MainWindowView: View {
     @State private var selectedInactiveWindows: [EditorWindowSnapshot] = []
     @State private var draggingLinkedWindowID: Int?
     @State private var adminRefreshWorkItem: DispatchWorkItem?
+    @State private var accessibilityTrusted = AccessibilityPermissionSupport.isProcessTrusted
     private let settingsSelectionID = Int32.min
 
     var body: some View {
@@ -83,18 +84,27 @@ struct MainWindowView: View {
             sidebar
                 .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
         } detail: {
-            detailPane
+            if accessibilityTrusted {
+                detailPane
+            } else {
+                AccessibilityOnboardingView()
+            }
         }
         .frame(minWidth: 560, minHeight: 420)   // Tight utility size
         .onAppear {
-            presentAccessibilityOnboardingIfNeeded()
+            accessibilityTrusted = AccessibilityPermissionCoordinator.refreshTrustState()
             scheduleAdminRefresh(delay: 0)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            _ = AccessibilityPermissionCoordinator.refreshTrustState()
+            accessibilityTrusted = AccessibilityPermissionCoordinator.refreshTrustState()
             scheduleAdminRefresh(delay: 0.15)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .stackerAccessibilityTrustDidChange)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .stackerAccessibilityTrustDidChange)) { notification in
+            if let trusted = notification.object as? Bool {
+                accessibilityTrusted = trusted
+            } else {
+                accessibilityTrusted = AccessibilityPermissionSupport.isProcessTrusted
+            }
             scheduleAdminRefresh(delay: 0.15)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
@@ -132,16 +142,6 @@ struct MainWindowView: View {
 }
 
 private extension MainWindowView {
-    private func presentAccessibilityOnboardingIfNeeded() {
-        _ = AccessibilityPermissionCoordinator.refreshTrustState()
-        guard !AccessibilityPermissionSupport.isProcessTrusted else { return }
-
-        Task { @MainActor in
-            await Task.yield()
-            expandedPID = settingsSelectionID
-        }
-    }
-
     private var apps: [AppSnapshot] {
         let stackLookup = Dictionary(uniqueKeysWithValues: activeStacks.map { ($0.pid, $0) })
 
@@ -229,11 +229,8 @@ private extension MainWindowView {
     }
 
     private func sidebarRow(for app: AppSnapshot) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: app.isActive ? "circle.fill" : "circle")
-                .font(.system(size: 7, weight: .semibold))
-                .foregroundStyle(app.statusTint)
-                .frame(width: 12)
+        HStack(spacing: 8) {
+            appIconView(for: app, size: 20, dotSize: 7)
 
             Text(app.name)
                 .font(.callout)
@@ -287,11 +284,8 @@ private extension MainWindowView {
     @ViewBuilder
     var detailPane: some View {
         if expandedPID == settingsSelectionID {
-            ScrollView {
-                OverlayShortcutSettingsView()
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
-            .navigationTitle("Settings")
+            OverlayShortcutSettingsView()
+                .navigationTitle("Settings")
         } else {
             ScrollView {
                 if let selectedApp {
@@ -325,17 +319,13 @@ private extension MainWindowView {
     }
 
     private func detailHeader(for app: AppSnapshot) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: app.isActive ? "rectangle.3.group.bubble.left.fill" : "rectangle.3.group")
-                .font(.system(size: 20, weight: .regular))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(app.statusTint)
-                .frame(width: 26, height: 26)
+        HStack(alignment: .center, spacing: 12) {
+            appIconView(for: app, size: 36, dotSize: 0)
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text(app.name)
-                        .font(.largeTitle.weight(.semibold))
+                        .font(.title2.weight(.semibold))
                         .lineLimit(1)
 
                     statusPill(app.statusTitle, tint: app.statusTint)
@@ -345,6 +335,31 @@ private extension MainWindowView {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.bottom, 2)
+    }
+
+    private func appIconView(for app: AppSnapshot, size: CGFloat, dotSize: CGFloat) -> some View {
+        Group {
+            if let icon = NSRunningApplication(processIdentifier: app.pid)?.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+            } else {
+                Image(systemName: "macwindow")
+                    .font(.system(size: size * 0.7))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: size, height: size)
+        .overlay(alignment: .bottomTrailing) {
+            if app.isActive, dotSize > 0 {
+                Circle()
+                    .fill(app.statusTint)
+                    .frame(width: dotSize, height: dotSize)
+                    .offset(x: 1.5, y: 1.5)
             }
         }
     }
@@ -379,12 +394,6 @@ private extension MainWindowView {
                 Spacer()
 
                 if app.isActive {
-                    Button {
-                        MainWindowViewActions.hideMainWindow()
-                    } label: {
-                        Label("Hide Stacker", systemImage: "eye.slash")
-                    }
-
                     Button(role: .destructive) {
                         MainWindowViewActions.resetApplicationStack(app.pid)
                     } label: {
@@ -394,7 +403,7 @@ private extension MainWindowView {
                     Button {
                         MainWindowViewActions.autoStackApplication(app.pid)
                     } label: {
-                        Label("Turn On", systemImage: "bolt.fill")
+                        Label("Turn On", systemImage: "power")
                     }
                     .buttonStyle(.borderedProminent)
                 }
@@ -411,7 +420,7 @@ private extension MainWindowView {
             HStack(spacing: 12) {
                 ProgressView()
                     .controlSize(.small)
-                Text("Reading open browser windows...")
+                Text("Reading open browser windows\u{2026}")
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -577,7 +586,7 @@ private extension MainWindowView {
             .foregroundStyle(tint)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(.quaternary, in: Capsule(style: .continuous))
+            .background(tint.opacity(0.12), in: Capsule(style: .continuous))
     }
 
     private func emptySectionText(_ text: String) -> some View {

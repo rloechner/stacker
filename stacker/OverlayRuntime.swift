@@ -141,6 +141,10 @@ private final class PanelAnchorDragHandleView: NSView {
         if !didDrag, hypot(delta.width, delta.height) > 2 {
             didDrag = true
         }
+        // Only report drags past the threshold; sub-threshold click jitter must not
+        // start a logical drag, because mouseUp only delivers onDragEnded for real
+        // drags and a started-but-never-ended drag wedges the controller's drag state.
+        guard didDrag else { return }
         onDragChanged?(delta)
     }
 
@@ -2465,6 +2469,13 @@ final class StackOverlayPanelController {
         case bottomTrailing
     }
 
+    private enum AnchorPerimeterCorner {
+        case topLeading
+        case topTrailing
+        case bottomLeading
+        case bottomTrailing
+    }
+
     private let panel: NSPanel
     private let containerView: TransparentContainerView
     private let hostingView: TransparentHostingView<StackOverlayStripView>
@@ -2508,6 +2519,7 @@ final class StackOverlayPanelController {
     private var controlsPanelBackingObserver: NSObjectProtocol?
     private var isUpdatingPosition = false
     private var isDraggingBackground = false
+    private var lockedCornerDock: StackOverlayDockPosition?
     private var horizontalAnchorOffset: CGFloat = 0
     private var verticalAnchorOffset: CGFloat = 0
     private var floatingHorizontalOffset: CGFloat = 0
@@ -2534,6 +2546,7 @@ final class StackOverlayPanelController {
     private var didRehomeDueToScreenMismatch = false
     private var movementFadeWorkItem: DispatchWorkItem?
     private var cornerRedrawWorkItem: DispatchWorkItem?
+    private var transientRecoverySyncScheduled = false
     private(set) var currentHealth: StackOverlayHealth = .visible
     var onHealthChanged: ((StackOverlayHealth) -> Void)?
     private let controlsPanelGap: CGFloat = 4
@@ -2542,6 +2555,7 @@ final class StackOverlayPanelController {
     private let topGap: CGFloat = 0
     private let bottomGap: CGFloat = 0
     private let perimeterCornerStickDistance: CGFloat = 24
+    private let perimeterCornerLockDistance: CGFloat = 48
     private let perimeterRailSwitchHysteresis: CGFloat = 34
 
     init(
@@ -2854,6 +2868,7 @@ final class StackOverlayPanelController {
         movementFadeWorkItem = nil
         cornerRedrawWorkItem?.cancel()
         cornerRedrawWorkItem = nil
+        transientRecoverySyncScheduled = false
         if let moveObserver {
             NotificationCenter.default.removeObserver(moveObserver)
         }
@@ -3328,16 +3343,115 @@ final class StackOverlayPanelController {
         }
 
         guard let nearest = candidates.min(by: { $0.distance < $1.distance }) else {
+            lockedCornerDock = nil
             return (.top, CGPoint(x: bounds.minX, y: anchorFrame.maxY + topGap), false)
         }
-        let isNearCorner = isNearPerimeterCorner(rawOrigin: rawOrigin, anchorFrame: anchorFrame)
+
+        let (nearestAnchorCorner, anchorCornerDistance) = nearestAnchorCorner(
+            dragPoint: rawOrigin,
+            anchorFrame: anchorFrame
+        )
+        let isNearCorner = anchorCornerDistance <= perimeterCornerLockDistance
+            || isNearPerimeterCorner(rawOrigin: rawOrigin, anchorFrame: anchorFrame)
+
+        if anchorCornerDistance <= perimeterCornerLockDistance {
+            let lockDock = lockedDockForCorner(
+                nearestAnchorCorner,
+                sideRailViable: sideRailViable,
+                currentDock: dockPosition,
+                existingLock: lockedCornerDock
+            )
+            lockedCornerDock = lockDock
+            if let match = candidates.first(where: { $0.dockPosition == lockDock }) {
+                return (lockDock, match.origin, true)
+            }
+        } else {
+            lockedCornerDock = nil
+        }
+
+        let hysteresis = crossOrientationHysteresis(
+            from: dockPosition,
+            to: nearest.dockPosition,
+            amplified: isNearCorner
+        )
 
         if let current = candidates.first(where: { $0.dockPosition == dockPosition }),
-           current.distance <= nearest.distance + perimeterRailSwitchHysteresis * perimeterRailSwitchHysteresis {
+           current.distance <= nearest.distance + hysteresis * hysteresis {
             return (current.dockPosition, current.origin, isNearCorner)
         }
 
         return (nearest.dockPosition, nearest.origin, isNearCorner)
+    }
+
+    private func nearestAnchorCorner(
+        dragPoint: CGPoint,
+        anchorFrame: CGRect
+    ) -> (corner: AnchorPerimeterCorner, distance: CGFloat) {
+        let panelSize = panel.frame.size
+        let reference = CGPoint(
+            x: dragPoint.x + panelSize.width / 2,
+            y: dragPoint.y + panelSize.height / 2
+        )
+        let corners: [(AnchorPerimeterCorner, CGPoint)] = [
+            (.topLeading, CGPoint(x: anchorFrame.minX, y: anchorFrame.maxY)),
+            (.topTrailing, CGPoint(x: anchorFrame.maxX, y: anchorFrame.maxY)),
+            (.bottomLeading, CGPoint(x: anchorFrame.minX, y: anchorFrame.minY)),
+            (.bottomTrailing, CGPoint(x: anchorFrame.maxX, y: anchorFrame.minY))
+        ]
+
+        let nearest = corners.min {
+            squaredDistance(from: reference, to: $0.1) < squaredDistance(from: reference, to: $1.1)
+        } ?? (.topLeading, CGPoint(x: anchorFrame.minX, y: anchorFrame.maxY))
+
+        return (nearest.0, distance(from: reference, to: nearest.1))
+    }
+
+    private func lockedDockForCorner(
+        _ corner: AnchorPerimeterCorner,
+        sideRailViable: Bool,
+        currentDock: StackOverlayDockPosition,
+        existingLock: StackOverlayDockPosition?
+    ) -> StackOverlayDockPosition {
+        let horizontalDefault: StackOverlayDockPosition
+        let verticalAlternative: StackOverlayDockPosition?
+        switch corner {
+        case .topLeading:
+            horizontalDefault = .top
+            verticalAlternative = sideRailViable ? .left : nil
+        case .topTrailing:
+            horizontalDefault = .top
+            verticalAlternative = sideRailViable ? .right : nil
+        case .bottomLeading:
+            horizontalDefault = .bottom
+            verticalAlternative = sideRailViable ? .left : nil
+        case .bottomTrailing:
+            horizontalDefault = .bottom
+            verticalAlternative = sideRailViable ? .right : nil
+        }
+
+        var validDocks = [horizontalDefault]
+        if let verticalAlternative {
+            validDocks.append(verticalAlternative)
+        }
+
+        if let existingLock, validDocks.contains(existingLock) {
+            return existingLock
+        }
+        if validDocks.contains(currentDock) {
+            return currentDock
+        }
+        return horizontalDefault
+    }
+
+    private func crossOrientationHysteresis(
+        from currentDock: StackOverlayDockPosition,
+        to candidateDock: StackOverlayDockPosition,
+        amplified: Bool
+    ) -> CGFloat {
+        guard amplified, isCornerRailTransition(from: currentDock, to: candidateDock) else {
+            return perimeterRailSwitchHysteresis
+        }
+        return perimeterRailSwitchHysteresis * 2
     }
 
     private func isNearPerimeterCorner(rawOrigin: CGPoint, anchorFrame: CGRect) -> Bool {
@@ -3468,6 +3582,7 @@ final class StackOverlayPanelController {
         dragStartOrigin = nil
         dragAnchorFrame = nil
         isDraggingBackground = false
+        lockedCornerDock = nil
         cornerRedrawWorkItem?.cancel()
         cornerRedrawWorkItem = nil
         panel.alphaValue = 1
@@ -3504,41 +3619,42 @@ final class StackOverlayPanelController {
 
     private func syncVisibility() {
         if isTemporarilyPaused {
-            controlsPanel.orderOut(nil)
-            panel.orderOut(nil)
+            hidePanelsForTransientInterruption(scheduleRecovery: false)
             return
         }
 
         if isDraggingBackground {
-            return
+            // Self-heal if the mouse-up was swallowed (panel ordered out mid-drag,
+            // cancelled gesture, etc.); a stale drag flag must not disable hiding.
+            if NSEvent.pressedMouseButtons == 0 {
+                handleBackgroundDragEnded()
+            } else {
+                return
+            }
         }
 
         guard !items.isEmpty else {
             updateHealth(.missingAnchor)
-            controlsPanel.orderOut(nil)
-            panel.orderOut(nil)
+            orderOutPanels()
             return
         }
 
         guard !isUserOverlayHidden else {
             updateHealth(.hidden)
-            controlsPanel.orderOut(nil)
-            panel.orderOut(nil)
+            orderOutPanels()
             return
         }
 
         let state = attachmentStateProvider?() ?? .missingAnchor
-        if state.health == .hidden {
+        if state.health == .hidden, !isOverlayContextMenuActive {
             updateHealth(.hidden)
-            controlsPanel.orderOut(nil)
-            panel.orderOut(nil)
+            hidePanelsForTransientInterruption(scheduleRecovery: true)
             return
         }
 
-        guard isTargetContextFrontmost else {
+        guard isTargetContextFrontmost || isOverlayContextMenuActive else {
             updateHealth(.visible)
-            controlsPanel.orderOut(nil)
-            panel.orderOut(nil)
+            hidePanelsForTransientInterruption(scheduleRecovery: true)
             return
         }
 
@@ -3574,8 +3690,7 @@ final class StackOverlayPanelController {
 
                     // Avoid driving AppKit/WindowServer panel transactions while the browser
                     // is actively moving or resizing; doing so can cause SLS transaction stalls.
-                    panel.orderOut(nil)
-                    controlsPanel.orderOut(nil)
+                    orderOutPanels()
 
                     if screenChanged {
                         needsReanchorAfterScreenChange = true
@@ -3598,8 +3713,7 @@ final class StackOverlayPanelController {
         }
 
         if viewModel.isWindowChanging {
-            panel.orderOut(nil)
-            controlsPanel.orderOut(nil)
+            orderOutPanels()
             return
         }
 
@@ -3629,8 +3743,7 @@ final class StackOverlayPanelController {
         guard let origin = resolvedAttachment.origin,
               resolvedAttachment.health.isWidgetDisplayed else {
             updateHealth(resolvedAttachment.health)
-            controlsPanel.orderOut(nil)
-            panel.orderOut(nil)
+            orderOutPanels()
             return
         }
 
@@ -3641,8 +3754,7 @@ final class StackOverlayPanelController {
             placementMode: resolvedAttachment.placementMode
            ) {
             updateHealth(.hidden)
-            controlsPanel.orderOut(nil)
-            panel.orderOut(nil)
+            hidePanelsForTransientInterruption(scheduleRecovery: true)
             return
         }
 
@@ -3657,6 +3769,39 @@ final class StackOverlayPanelController {
 
         syncControlsPanelVisibility()
         panel.orderFrontRegardless()
+    }
+
+    private func orderOutPanels() {
+        controlsPanel.orderOut(nil)
+        panel.orderOut(nil)
+    }
+
+    private func hidePanelsForTransientInterruption(scheduleRecovery: Bool) {
+        movementFadeWorkItem?.cancel()
+        movementFadeWorkItem = nil
+        viewModel.isWindowChanging = false
+        orderOutPanels()
+
+        if scheduleRecovery {
+            scheduleTransientRecoverySyncs()
+        }
+    }
+
+    private func scheduleTransientRecoverySyncs() {
+        guard !transientRecoverySyncScheduled else { return }
+        transientRecoverySyncScheduled = true
+
+        for (index, delay) in [0.12, 0.35].enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self else { return }
+                if index == 1 {
+                    self.transientRecoverySyncScheduled = false
+                }
+                self.syncLayerBackingScales()
+                self.invalidatePanelRendering()
+                self.syncVisibility()
+            }
+        }
     }
 
     private func handleWindowMovementStopped() {
@@ -4077,115 +4222,24 @@ final class StackOverlayPanelController {
         panelFrame: CGRect,
         placementMode: StackOverlayPlacementMode
     ) -> Bool {
-        guard let windowList = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements],
-            kCGNullWindowID
-        ) as? [[String: Any]] else {
-            return false
-        }
-
-        let currentPID = NSRunningApplication.current.processIdentifier
-        for windowInfo in windowList {
-            guard let ownerPID = pidValue(from: windowInfo[kCGWindowOwnerPID as String]),
-                  ownerPID != currentPID,
-                  intValue(from: windowInfo[kCGWindowLayer as String]) == 0,
-                  let windowFrame = appKitFrame(fromCGWindowInfo: windowInfo),
-                  windowFrame.width > 24,
-                  windowFrame.height > 24 else {
-                continue
-            }
-
-            if ownerPID == appPID && approximatelyMatches(windowFrame, anchorFrame) {
-                return false
-            }
-
-            if windowFrame.intersects(panelFrame) {
-                return true
-            }
-
-            if placementMode == .edgeDocked {
-                if intersectionArea(windowFrame, anchorFrame) > anchorFrameArea(anchorFrame) * 0.1 ||
-                    isFullscreenLike(windowFrame, near: anchorFrame) {
-                    return true
-                }
-            }
-        }
-
-        return false
-    }
-
-    private func appKitFrame(fromCGWindowInfo windowInfo: [String: Any]) -> CGRect? {
-        guard let bounds = windowInfo[kCGWindowBounds as String] as? NSDictionary,
-              let rawFrame = CGRect(dictionaryRepresentation: bounds) else {
-            return nil
-        }
-
-        let primaryMaxY = NSScreen.screens.first(where: { $0.frame.origin == .zero })?.frame.maxY
-            ?? NSScreen.main?.frame.maxY
-            ?? NSScreen.screens.map(\.frame.maxY).max()
-            ?? 0
-
-        return CGRect(
-            x: rawFrame.origin.x,
-            y: primaryMaxY - rawFrame.origin.y - rawFrame.height,
-            width: rawFrame.width,
-            height: rawFrame.height
+        StackOverlayOcclusion.isCoveredByHigherWindow(
+            records: StackOverlayOcclusion.currentWindowRecords(),
+            currentPID: NSRunningApplication.current.processIdentifier,
+            frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            appPID: appPID,
+            anchorFrame: anchorFrame,
+            panelFrame: panelFrame,
+            placementMode: placementMode
         )
-    }
-
-    private func approximatelyMatches(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
-        abs(lhs.minX - rhs.minX) <= 12 &&
-        abs(lhs.minY - rhs.minY) <= 12 &&
-        abs(lhs.width - rhs.width) <= 24 &&
-        abs(lhs.height - rhs.height) <= 24
-    }
-
-    private func intersectionArea(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
-        let intersection = lhs.intersection(rhs)
-        return max(0, intersection.width) * max(0, intersection.height)
-    }
-
-    private func anchorFrameArea(_ frame: CGRect) -> CGFloat {
-        max(1, frame.width * frame.height)
-    }
-
-    private func isFullscreenLike(_ frame: CGRect, near anchorFrame: CGRect) -> Bool {
-        guard let screen = NSScreen.screens.first(where: { $0.frame.intersects(frame) && $0.frame.intersects(anchorFrame) })
-            ?? NSScreen.screens.first(where: { $0.visibleFrame.intersects(frame) && $0.visibleFrame.intersects(anchorFrame) }) else {
-            return false
-        }
-
-        let screenArea = screen.frame.width * screen.frame.height
-        let intersection = frame.intersection(screen.frame)
-        let intersectionArea = max(0, intersection.width) * max(0, intersection.height)
-        return screenArea > 0 && intersectionArea / screenArea > 0.9
-    }
-
-    private func pidValue(from value: Any?) -> pid_t? {
-        if let pid = value as? pid_t {
-            return pid
-        }
-        if let number = value as? NSNumber {
-            return pid_t(number.int32Value)
-        }
-        if let intValue = value as? Int {
-            return pid_t(intValue)
-        }
-        return nil
-    }
-
-    private func intValue(from value: Any?) -> Int? {
-        if let intValue = value as? Int {
-            return intValue
-        }
-        if let number = value as? NSNumber {
-            return number.intValue
-        }
-        return nil
     }
 
     private var isTargetContextFrontmost: Bool {
         NSWorkspace.shared.frontmostApplication?.processIdentifier == appPID
+    }
+
+    /// True while the widget panel has key focus (e.g. during a right-click context menu).
+    private var isOverlayContextMenuActive: Bool {
+        panel.isKeyWindow || controlsPanel.isKeyWindow
     }
 
     private var isUserOverlayHidden: Bool {
@@ -4684,7 +4738,13 @@ final class CombineOverlayPanelController {
         }
 
         if isDraggingBackground {
-            panel.orderFrontRegardless()
+            // Self-heal if the mouse-up was swallowed; a stale drag flag must not
+            // pin the panel on screen. handleBackgroundDragEnded re-runs this sync.
+            if NSEvent.pressedMouseButtons == 0 {
+                handleBackgroundDragEnded()
+            } else {
+                panel.orderFrontRegardless()
+            }
             return
         }
 
@@ -4797,106 +4857,15 @@ final class CombineOverlayPanelController {
     }
 
     private func isCoveredByHigherWindow(anchorFrame: CGRect, panelFrame: CGRect) -> Bool {
-        guard let windowList = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements],
-            kCGNullWindowID
-        ) as? [[String: Any]] else {
-            return false
-        }
-
-        let currentPID = NSRunningApplication.current.processIdentifier
-        for windowInfo in windowList {
-            guard let ownerPID = pidValue(from: windowInfo[kCGWindowOwnerPID as String]),
-                  ownerPID != currentPID,
-                  intValue(from: windowInfo[kCGWindowLayer as String]) == 0,
-                  let windowFrame = appKitFrame(fromCGWindowInfo: windowInfo),
-                  windowFrame.width > 24,
-                  windowFrame.height > 24 else {
-                continue
-            }
-
-            if ownerPID == appPID && approximatelyMatches(windowFrame, anchorFrame) {
-                return false
-            }
-
-            if windowFrame.intersects(panelFrame) ||
-                intersectionArea(windowFrame, anchorFrame) > anchorFrameArea(anchorFrame) * 0.1 ||
-                isFullscreenLike(windowFrame, near: anchorFrame) {
-                return true
-            }
-        }
-
-        return false
-    }
-
-    private func appKitFrame(fromCGWindowInfo windowInfo: [String: Any]) -> CGRect? {
-        guard let bounds = windowInfo[kCGWindowBounds as String] as? NSDictionary,
-              let rawFrame = CGRect(dictionaryRepresentation: bounds) else {
-            return nil
-        }
-
-        let primaryMaxY = NSScreen.screens.first(where: { $0.frame.origin == .zero })?.frame.maxY
-            ?? NSScreen.main?.frame.maxY
-            ?? NSScreen.screens.map(\.frame.maxY).max()
-            ?? 0
-
-        return CGRect(
-            x: rawFrame.origin.x,
-            y: primaryMaxY - rawFrame.origin.y - rawFrame.height,
-            width: rawFrame.width,
-            height: rawFrame.height
+        StackOverlayOcclusion.isCoveredByHigherWindow(
+            records: StackOverlayOcclusion.currentWindowRecords(),
+            currentPID: NSRunningApplication.current.processIdentifier,
+            frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            appPID: appPID,
+            anchorFrame: anchorFrame,
+            panelFrame: panelFrame,
+            placementMode: .edgeDocked
         )
-    }
-
-    private func approximatelyMatches(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
-        abs(lhs.minX - rhs.minX) <= 12 &&
-        abs(lhs.minY - rhs.minY) <= 12 &&
-        abs(lhs.width - rhs.width) <= 24 &&
-        abs(lhs.height - rhs.height) <= 24
-    }
-
-    private func intersectionArea(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
-        let intersection = lhs.intersection(rhs)
-        return max(0, intersection.width) * max(0, intersection.height)
-    }
-
-    private func anchorFrameArea(_ frame: CGRect) -> CGFloat {
-        max(1, frame.width * frame.height)
-    }
-
-    private func isFullscreenLike(_ frame: CGRect, near anchorFrame: CGRect) -> Bool {
-        guard let screen = NSScreen.screens.first(where: { $0.frame.intersects(frame) && $0.frame.intersects(anchorFrame) })
-            ?? NSScreen.screens.first(where: { $0.visibleFrame.intersects(frame) && $0.visibleFrame.intersects(anchorFrame) }) else {
-            return false
-        }
-
-        let screenArea = screen.frame.width * screen.frame.height
-        let intersection = frame.intersection(screen.frame)
-        let intersectionArea = max(0, intersection.width) * max(0, intersection.height)
-        return screenArea > 0 && intersectionArea / screenArea > 0.9
-    }
-
-    private func pidValue(from value: Any?) -> pid_t? {
-        if let pid = value as? pid_t {
-            return pid
-        }
-        if let number = value as? NSNumber {
-            return pid_t(number.int32Value)
-        }
-        if let intValue = value as? Int {
-            return pid_t(intValue)
-        }
-        return nil
-    }
-
-    private func intValue(from value: Any?) -> Int? {
-        if let intValue = value as? Int {
-            return intValue
-        }
-        if let number = value as? NSNumber {
-            return number.intValue
-        }
-        return nil
     }
 
     private func installDisplayChangeObservers() {

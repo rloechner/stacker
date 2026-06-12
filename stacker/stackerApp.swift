@@ -11,8 +11,8 @@ struct stackerApp: App {
         WindowGroup("Stacker") {
             MainWindowView()
                 .background(StackerAdminWindowAccessor())
-                .frame(minWidth: 900, minHeight: 620)
         }
+        .defaultSize(width: 900, height: 620)
 
         MenuBarExtra {
             StackerMenuBarContent(state: menuBarState)
@@ -26,6 +26,7 @@ struct stackerApp: App {
 
         Settings {
             OverlayShortcutSettingsView()
+                .frame(minWidth: 520, idealWidth: 560, minHeight: 540, idealHeight: 680)
         }
         .commands {
             CommandGroup(replacing: .appVisibility) {

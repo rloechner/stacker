@@ -7,10 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		94BAB1922F7F000000FBF7C4 /* WindowAttachmentEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94BAB1912F7F000000FBF7C4 /* WindowAttachmentEngineTests.swift */; };
 		94BAB1A02F7F010000FBF7C4 /* BrowserSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94BAB1A32F7F010000FBF7C4 /* BrowserSupportTests.swift */; };
 		94BAB1A12F7F010000FBF7C4 /* StackJumpShortcutLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94BAB1A42F7F010000FBF7C4 /* StackJumpShortcutLogicTests.swift */; };
 		94BAB1A22F7F010000FBF7C4 /* StackerSessionStoreLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94BAB1A52F7F010000FBF7C4 /* StackerSessionStoreLogicTests.swift */; };
-		94BAB1922F7F000000FBF7C4 /* WindowAttachmentEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94BAB1912F7F000000FBF7C4 /* WindowAttachmentEngineTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -24,12 +24,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		94BAB1712F7EBA4800FBF7C4 /* stacker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = stacker.app; path = Stacker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		94BAB1902F7F000000FBF7C4 /* StackerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = StackerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		94BAB1912F7F000000FBF7C4 /* WindowAttachmentEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAttachmentEngineTests.swift; sourceTree = "<group>"; };
 		94BAB1A32F7F010000FBF7C4 /* BrowserSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserSupportTests.swift; sourceTree = "<group>"; };
 		94BAB1A42F7F010000FBF7C4 /* StackJumpShortcutLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackJumpShortcutLogicTests.swift; sourceTree = "<group>"; };
 		94BAB1A52F7F010000FBF7C4 /* StackerSessionStoreLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackerSessionStoreLogicTests.swift; sourceTree = "<group>"; };
-		94BAB1712F7EBA4800FBF7C4 /* stacker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = stacker.app; path = Stacker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -348,7 +348,7 @@
 				CODE_SIGN_ENTITLEMENTS = stacker/stacker.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = 44N969GC55;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -368,7 +368,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.6;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "RHL-Studios.stacker";
 				PRODUCT_NAME = Stacker;
 				REGISTER_APP_GROUPS = YES;
@@ -396,7 +396,7 @@
 				CODE_SIGN_ENTITLEMENTS = stacker/stacker.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = 44N969GC55;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -416,7 +416,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.6;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "RHL-Studios.stacker";
 				PRODUCT_NAME = Stacker;
 				REGISTER_APP_GROUPS = YES;
